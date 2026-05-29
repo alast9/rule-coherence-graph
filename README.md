@@ -1,5 +1,7 @@
 # Rule Coherence Graph (RCG)
 
+[![CI](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml)
+
 **Detect conflicts in the rule corpora that govern AI coding agents — before the agent does.**
 
 AI coding agents (Cursor, Claude Code, Cline, Gemini in agent IDEs, custom
