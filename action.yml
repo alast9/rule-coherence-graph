@@ -1,0 +1,80 @@
+name: "RCG Conflict Check"
+description: "Detect conflicts, redundancies, and ambiguities across natural-language agent rules."
+branding:
+  icon: "git-merge"
+  color: "orange"
+
+inputs:
+  path:
+    description: "Path to the rules directory or file to check."
+    required: false
+    default: "."
+  provider:
+    description: "Extraction provider: mock|anthropic. anthropic needs ANTHROPIC_API_KEY."
+    required: false
+    default: "mock"
+  min-score:
+    description: "Fail if the coherence score is below this threshold (e.g. 0.8)."
+    required: false
+    default: ""
+  semantic:
+    description: "Run the optional semantic pass (true|false)."
+    required: false
+    default: "false"
+  comment:
+    description: "Post the report as a PR comment (true|false)."
+    required: false
+    default: "true"
+  fail-on-conflict:
+    description: "Fail the job when conflicts are found (true|false)."
+    required: false
+    default: "true"
+  version:
+    description: "Version spec appended to the pip install, e.g. '==0.2.0'."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install RCG
+      shell: bash
+      run: |
+        pipx install "rule-coherence-graph${{ inputs.version }}"
+
+    - name: Run RCG check
+      id: rcg
+      shell: bash
+      run: |
+        args=("${{ inputs.path }}" --no-graph --provider "${{ inputs.provider }}" --out rcg-report.md)
+        if [ "${{ inputs.semantic }}" = "true" ]; then
+          args+=(--semantic)
+        fi
+        if [ -n "${{ inputs.min-score }}" ]; then
+          args+=(--min-score "${{ inputs.min-score }}")
+        fi
+        set +e
+        rcg check "${args[@]}"
+        code=$?
+        set -e
+        echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+
+    - name: Comment on PR
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        {
+          echo "<!-- rcg-report -->"
+          cat rcg-report.md
+        } > body.md
+        num="${{ github.event.pull_request.number }}"
+        gh pr comment "$num" --body-file body.md --edit-last --create-if-none \
+          || gh pr comment "$num" --body-file body.md
+
+    - name: Fail on conflict
+      if: inputs.fail-on-conflict == 'true'
+      shell: bash
+      run: |
+        test "${{ steps.rcg.outputs.exit_code }}" = "0"

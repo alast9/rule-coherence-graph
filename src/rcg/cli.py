@@ -220,6 +220,53 @@ def check(
 
 
 @app.command()
+def explain(
+    action: str = typer.Argument(..., help="Hypothetical action description."),
+    path: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=True),
+    scope: str = typer.Option("*", "--scope", help="Glob scope for the action."),
+    provider: PROVIDER_OPT = "auto",
+    strict: bool = typer.Option(
+        False, "--strict", help="Exit 1 if firing rules conflict or are ambiguous."
+    ),
+) -> None:
+    """Show which rules fire for a hypothetical action and whether they conflict."""
+    from rcg.explain import explain as run_explain
+
+    raws = discover(path)
+    if not raws:
+        typer.echo(f"No rule files discovered under {path}", err=True)
+        raise typer.Exit(code=1)
+    prov = _build_provider(provider)
+    rules = extract_all(raws, prov)
+    result = run_explain(rules, action, prov, scope=scope)
+
+    typer.echo(f"Action: {result.action}")
+    typer.echo(f"Action class: {result.action_class}")
+    typer.echo(f"Scope: {result.scope}")
+    typer.echo("")
+    if result.firing:
+        typer.echo(f"Firing rules ({len(result.firing)}):")
+        for r in result.firing:
+            typer.echo(
+                f"  - [{r.directive.modality.value}] {r.directive.action} "
+                f"({r.source.file})"
+            )
+    else:
+        typer.echo("Firing rules: none")
+    typer.echo("")
+
+    findings = [*result.conflicts, *result.ambiguities]
+    if findings:
+        typer.echo(render_report(findings))
+        typer.echo("")
+    typer.echo(f"Verdict: {result.verdict}")
+
+    if strict and findings:
+        raise typer.Exit(1)
+    raise typer.Exit(0)
+
+
+@app.command()
 def score(
     path: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
     provider: PROVIDER_OPT = "auto",

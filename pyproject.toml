@@ -1,6 +1,6 @@
 [project]
 name = "rule-coherence-graph"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rule Coherence Graph — detect conflicts in AI agent rule corpora."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,11 +34,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = ["mcp>=1.2"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.10",
+    "mcp>=1.2",
 ]
 embeddings = [
     "sentence-transformers>=3.0",
@@ -46,6 +48,7 @@ embeddings = [
 
 [project.scripts]
 rcg = "rcg.cli:app"
+rcg-mcp = "rcg.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/alast9/rule-coherence-graph"
@@ -75,6 +78,10 @@ select = ["E", "F", "I", "B", "UP"]
 python_version = "3.11"
 strict = true
 files = ["src/rcg"]
+
+[[tool.mypy.overrides]]
+module = "mcp.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

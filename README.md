@@ -158,6 +158,15 @@ with a "require confirmation" rule.
 | `rcg ingest <path>` | Parse, extract, and load a corpus into Neo4j. |
 | `rcg check <path>` | Ingest + run the detection passes; exits non-zero if any (non-baselined) finding is found. |
 | `rcg score <path>` | Print the corpus coherence score and a by-type breakdown (always exits 0). |
+| `rcg explain "<action>" <path>` | Show which rules fire for a hypothetical action and whether they conflict. |
+
+`rcg explain` classifies the action into an action class, lists every rule that fires for it
+(within an optional `--scope` glob), and reports any direct conflicts or precedence ambiguities
+among those rules. Pass `--strict` to exit non-zero when firing rules conflict.
+
+```bash
+uv run rcg explain "deploy to production" examples/gemini_incident --provider mock
+```
 
 Useful flags: `--provider auto\|anthropic\|mock`, `--no-graph` (skip Neo4j),
 `--out report.md` (write report to a file), `--semantic` (run the embedding +
@@ -263,11 +272,72 @@ Neo4j persistence, and a faithful incident example that works end-to-end.
 - **Baseline** — `--update-baseline` records reviewed findings; later runs
   suppress them and surface only what is new.
 
+Also implemented: the `rcg explain` command, an **MCP server** (`rcg-mcp`) exposing
+`check_corpus` / `explain_action` / `score_corpus` to agents, and a reusable **GitHub Action**
+(see below).
+
 Deferred (see [`docs/SPEC.md`](docs/SPEC.md) for the full design): a bundled
-production-grade embedding model (the `embeddings` extra is opt-in),
-`explain`/`diff`/`graph export` commands, an HTTP API, and additional parsers
-(`.cursorrules`, `.mdc`, YAML/JSON).
+production-grade embedding model (the `embeddings` extra is opt-in), `diff`/`graph export`
+commands, an HTTP API, and additional parsers (`.cursorrules`, `.mdc`, YAML/JSON).
 
 **Honest about limits:** heuristic/LLM extraction has false positives. Every
 flagged conflict includes both rules' original text as evidence so a human can
 adjudicate; confidence and the source language are always surfaced, never hidden.
+
+---
+
+## Use it in CI (GitHub Action)
+
+RCG ships a reusable composite action. Add a workflow that checks your rules on every PR and
+(optionally) posts the report as a sticky comment:
+
+```yaml
+permissions: { contents: read, pull-requests: write }
+jobs:
+  rule-coherence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: alast9/rule-coherence-graph@main   # or pin @v0.2.0
+        with:
+          path: .agent/rules
+          min-score: "0.8"
+```
+
+The `pull-requests: write` permission is required for the PR comment. To use the semantic pass
+or the Anthropic extractor, set `provider: anthropic` and provide `ANTHROPIC_API_KEY` as a repo
+secret. Inputs: `path`, `provider`, `min-score`, `semantic`, `comment`, `fail-on-conflict`,
+`version` (a pip version spec, e.g. `==0.2.0`).
+
+---
+
+## Agent-native (MCP)
+
+RCG exposes a [Model Context Protocol](https://modelcontextprotocol.io) server so agents can call
+it directly. Run it over stdio:
+
+```bash
+uvx --from 'rule-coherence-graph[mcp]' rcg-mcp
+# or: pipx install 'rule-coherence-graph[mcp]' && rcg-mcp
+```
+
+Sample MCP client config (Claude Code / Cursor `mcpServers`):
+
+```json
+{
+  "mcpServers": {
+    "rcg": {
+      "command": "uvx",
+      "args": ["--from", "rule-coherence-graph[mcp]", "rcg-mcp"]
+    }
+  }
+}
+```
+
+Tools exposed:
+
+- `check_corpus(path, provider="mock", semantic=false)` — discover + extract + detect; returns
+  score, counts by type, and the findings.
+- `explain_action(action, path, scope="*", provider="mock")` — which rules fire for an action and
+  whether they conflict.
+- `score_corpus(path, provider="mock")` — just the coherence score.
