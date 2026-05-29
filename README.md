@@ -353,6 +353,8 @@ secret. Inputs: `path`, `provider`, `min-score`, `semantic`, `comment`, `fail-on
 
 ## Agent-native (MCP)
 
+> **Per-assistant setup** (Claude Code, Cursor, VS Code/Copilot, Windsurf, Cline, Zed, Claude Desktop): see **[docs/mcp-clients.md](docs/mcp-clients.md)**.
+
 RCG exposes a [Model Context Protocol](https://modelcontextprotocol.io) server so agents can call
 it directly. Run it over stdio:
 
