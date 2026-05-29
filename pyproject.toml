@@ -40,6 +40,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
+embeddings = [
+    "sentence-transformers>=3.0",
+]
 
 [project.scripts]
 rcg = "rcg.cli:app"

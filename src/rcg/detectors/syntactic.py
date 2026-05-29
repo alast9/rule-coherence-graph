@@ -16,10 +16,10 @@ Severity rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from itertools import combinations
 from typing import Literal
 
+from rcg.detectors.base import scopes_overlap
 from rcg.schema import OPPOSING_MODALITY, Modality, Rule
 
 Severity = Literal["low", "medium", "high", "critical"]
@@ -74,10 +74,7 @@ class SyntacticDetector:
 
     @staticmethod
     def _scopes_overlap(a: Rule, b: Rule) -> bool:
-        sa, sb = a.trigger.scope_pattern, b.trigger.scope_pattern
-        if sa == sb:
-            return True
-        return fnmatch(sa, sb) or fnmatch(sb, sa)
+        return scopes_overlap(a, b)
 
     @staticmethod
     def _modalities_oppose(a: Rule, b: Rule) -> bool:

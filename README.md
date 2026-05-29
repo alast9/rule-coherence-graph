@@ -26,8 +26,8 @@ uv run rcg check examples/gemini_incident
 ```
 
 With no `ANTHROPIC_API_KEY` set, `check` falls back to the offline heuristic
-extractor (with a warning) so the demo runs anywhere. It surfaces **7 conflicts**
-in the bundled corpus and exits non-zero, e.g.:
+extractor (with a warning) so the demo runs anywhere. It reports a **coherence score of 0.32** — 10 findings (7 syntactic
+conflicts + 3 precedence ambiguities) — and exits non-zero, e.g.:
 
 ```
 ## 1. CRITICAL — syntactic
@@ -158,10 +158,35 @@ with a "require confirmation" rule.
 | Command | Description |
 | --- | --- |
 | `rcg ingest <path>` | Parse, extract, and load a corpus into Neo4j. |
-| `rcg check <path>` | Ingest + run the syntactic conflict pass; exits non-zero if any conflict is found. |
+| `rcg check <path>` | Ingest + run the detection passes; exits non-zero if any (non-baselined) finding is found. |
+| `rcg score <path>` | Print the corpus coherence score and a by-type breakdown (always exits 0). |
 
 Useful flags: `--provider auto\|anthropic\|mock`, `--no-graph` (skip Neo4j),
-`--out report.md` (write report to a file).
+`--out report.md` (write report to a file), `--semantic` (run the embedding +
+judge pass; off by default), `--no-precedence` (skip the precedence pass; on by
+default), `--min-score FLOAT` (fail only when the coherence score drops below the
+threshold instead of on any finding), `--baseline PATH` (accepted-conflicts file,
+applied only if it exists; default `rcg-baseline.json`), and `--update-baseline`
+(record the current findings as accepted and exit 0; future runs suppress them).
+
+```bash
+# Run the semantic pass too, and gate CI on a minimum coherence score
+uv run rcg check examples/gemini_incident --semantic --min-score 0.8
+
+# Print just the score
+uv run rcg score examples/gemini_incident
+
+# Accept current findings as a reviewed baseline; later runs suppress them
+uv run rcg check examples/gemini_incident --update-baseline
+```
+
+The default semantic recall uses a dependency-free `HashingEmbeddingProvider`
+that captures *lexical* overlap only — it is a stand-in. For real semantic
+recall (synonyms, paraphrase) install a true embedding model:
+
+```bash
+pip install 'rule-coherence-graph[embeddings]'
+```
 
 ## Example Cypher
 
@@ -224,14 +249,26 @@ pytest/ruff/mypy, packaged with `uv`.
 
 ## Status & scope
 
-This repo implements the **first vertical slice**: markdown ingestion → LLM
-extraction (with cache) → syntactic conflict pass → markdown report, with
-optional Neo4j persistence and a faithful incident example that works end-to-end.
+This repo implements markdown ingestion → LLM extraction (with cache) →
+**syntactic, semantic, and precedence** detection passes → a **coherence score**
+and grouped markdown report, with an **accepted-conflicts baseline**, optional
+Neo4j persistence, and a faithful incident example that works end-to-end.
 
-Deferred (see [`docs/SPEC.md`](docs/SPEC.md) for the full design): semantic and
-precedence detection passes, a per-corpus coherence score, `explain`/`diff`/
-`graph export` commands, an HTTP API, additional parsers (`.cursorrules`, `.mdc`,
-YAML/JSON), and an embedding provider.
+- **Syntactic pass** — opposing modality / approval stance on overlapping scopes.
+- **Semantic pass** (`--semantic`) — embedding recall + an LLM judge (offline
+  `MockJudge` or `AnthropicJudge`), with a per-pair judge cache. Candidate recall
+  defaults to a dependency-free `HashingEmbeddingProvider` (lexical overlap only;
+  a stand-in). Real semantic recall needs a true embedding model:
+  `pip install 'rule-coherence-graph[embeddings]'`.
+- **Precedence pass** — cross-file co-firing rules with no declared ordering.
+- **Coherence score** — type-weighted, in `[0, 1]`; gate CI with `--min-score`.
+- **Baseline** — `--update-baseline` records reviewed findings; later runs
+  suppress them and surface only what is new.
+
+Deferred (see [`docs/SPEC.md`](docs/SPEC.md) for the full design): a bundled
+production-grade embedding model (the `embeddings` extra is opt-in),
+`explain`/`diff`/`graph export` commands, an HTTP API, and additional parsers
+(`.cursorrules`, `.mdc`, YAML/JSON).
 
 **Honest about limits:** heuristic/LLM extraction has false positives. Every
 flagged conflict includes both rules' original text as evidence so a human can

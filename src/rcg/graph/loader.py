@@ -6,12 +6,12 @@ This is one of the §8 non-negotiables (determinism).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 from neo4j import Driver, GraphDatabase
 
-from rcg.detectors.syntactic import Conflict
+from rcg.detectors.base import Finding
 from rcg.graph import queries
 from rcg.schema import Rule
 
@@ -34,7 +34,7 @@ class GraphLoader:
         finally:
             driver.close()
 
-    def load_rules(self, rules: list[Rule]) -> None:
+    def load_rules(self, rules: Sequence[Rule]) -> None:
         with self._driver.session() as session:
             seen_files: set[str] = set()
             for rule in rules:
@@ -62,7 +62,7 @@ class GraphLoader:
                     file=rule.source.file,
                 )
 
-    def load_conflicts(self, conflicts: list[Conflict]) -> None:
+    def load_conflicts(self, conflicts: Sequence[Finding]) -> None:
         with self._driver.session() as session:
             for c in conflicts:
                 session.run(
