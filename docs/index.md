@@ -15,6 +15,11 @@ coherence, and lets you query, visualize, and fail CI on them.
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [Use it in your assistant](mcp-clients.md){ .md-button }
+[Hosted MCP demo](hosted-mcp.md){ .md-button }
+
+> **Hosted demo:** prefer not to install anything? Deploy RCG as a public HTTP
+> service on Fly.io (optionally backed by Neo4j AuraDB) and check pasted rules
+> from any MCP client — see [Hosted MCP demo](hosted-mcp.md).
 
 ## Why it exists
 

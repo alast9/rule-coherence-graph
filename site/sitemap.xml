@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://alast9.github.io/rule-coherence-graph/</loc>
+         <lastmod>2026-05-29</lastmod>
+    </url>
+    <url>
+         <loc>https://alast9.github.io/rule-coherence-graph/RELEASING/</loc>
+         <lastmod>2026-05-29</lastmod>
+    </url>
+    <url>
+         <loc>https://alast9.github.io/rule-coherence-graph/SPEC/</loc>
+         <lastmod>2026-05-29</lastmod>
+    </url>
+    <url>
+         <loc>https://alast9.github.io/rule-coherence-graph/benchmark/</loc>
+         <lastmod>2026-05-29</lastmod>
+    </url>
+    <url>
+         <loc>https://alast9.github.io/rule-coherence-graph/mcp-clients/</loc>
+         <lastmod>2026-05-29</lastmod>
+    </url>
+    <url>
+         <loc>https://alast9.github.io/rule-coherence-graph/quickstart/</loc>
+         <lastmod>2026-05-29</lastmod>
+    </url>
+</urlset>

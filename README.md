@@ -104,7 +104,8 @@ conflict was invisible until it caused damage.
       ┌─────▼──────┐  ┌──────────────┐   ┌────────────┐   ┌─────▼──────┐
       │  Parsers   │─▶│ LLM Extractor│──▶│  Detectors │──▶│  Reports   │
       │ (md/cursor │  │ + hash cache │   │ (syntactic)│   │ (markdown) │
-      │  /mdc/yaml)│  └──────────────┘   └─────┬──────┘   └────────────┘
+      │ /mdc/yaml/ │  └──────────────┘   └─────┬──────┘   └────────────┘
+      │ rego/cedar)│                          │
       └────────────┘                          │
                                         ┌──────▼──────┐
                                         │    Neo4j    │
@@ -115,7 +116,8 @@ conflict was invisible until it caused damage.
 - **Parsers** read a file and emit raw rule strings with source metadata. Adding
   a format is a single new parser class — nothing downstream changes. Today RCG
   parses markdown (`CLAUDE.md`, `AGENTS.md`, `memory.md`, `.agent/rules/*.md`),
-  Cursor `.cursorrules` and `.mdc` files, and rule-related YAML/JSON files.
+  Cursor `.cursorrules` and `.mdc` files, rule-related YAML/JSON files, and
+  policy-as-code: OPA Rego (`.rego`) and AWS Cedar (`.cedar`).
 - **Extractor** turns each raw rule into a canonical `Rule` via a provider
   (`anthropic`, `mock`, or `auto`). Results are cached by content hash + model +
   prompt version, so extraction is deterministic and re-runs are free.
@@ -356,6 +358,8 @@ secret. Inputs: `path`, `provider`, `min-score`, `semantic`, `comment`, `fail-on
 ## Agent-native (MCP)
 
 > **Per-assistant setup** (Claude Code, Cursor, VS Code/Copilot, Windsurf, Cline, Zed, Claude Desktop): see **[docs/mcp-clients.md](docs/mcp-clients.md)**.
+>
+> **Hosted demo:** deploy RCG as a public HTTP (streamable-http) service on Fly.io, optionally backed by Neo4j AuraDB, and check pasted rules from any MCP client — see **[docs/hosted-mcp.md](docs/hosted-mcp.md)**.
 
 RCG exposes a [Model Context Protocol](https://modelcontextprotocol.io) server so agents can call
 it directly. Run it over stdio:
@@ -382,6 +386,10 @@ Tools exposed:
 
 - `check_corpus(path, provider="mock", semantic=false)` — discover + extract + detect; returns
   score, counts by type, and the findings.
+- `check_rules(rules_text, format="markdown", semantic=false)` — same as `check_corpus` but over a
+  pasted rules string (no filesystem access); used by the hosted demo.
 - `explain_action(action, path, scope="*", provider="mock")` — which rules fire for an action and
   whether they conflict.
 - `score_corpus(path, provider="mock")` — just the coherence score.
+- `ingest_to_graph(path, provider="mock")` — check a corpus and persist it to Neo4j when
+  `NEO4J_URI` is configured.

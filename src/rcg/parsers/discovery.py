@@ -6,9 +6,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from rcg.parsers.base import Parser
+from rcg.parsers.cedar import CedarParser
 from rcg.parsers.cursorrules import CursorRulesParser
 from rcg.parsers.markdown_rules import MarkdownRulesParser
 from rcg.parsers.mdc import MdcParser
+from rcg.parsers.opa_rego import OpaRegoParser
 from rcg.parsers.structured import StructuredRulesParser
 from rcg.schema import RawRule
 
@@ -17,6 +19,8 @@ _DEFAULT_PARSERS: list[Parser] = [
     MdcParser(),
     CursorRulesParser(),
     StructuredRulesParser(),
+    OpaRegoParser(),
+    CedarParser(),
 ]
 
 _SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".rcg"}

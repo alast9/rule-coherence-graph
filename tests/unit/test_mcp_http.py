@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+import pytest
+
+pytest.importorskip("mcp")
+
+from rcg import mcp_server  # noqa: E402
+
+
+def test_resolve_transport_defaults_to_stdio() -> None:
+    transport, host, port = mcp_server._resolve_transport({})
+    assert transport == "stdio"
+    assert host == "127.0.0.1"
+    assert port == 8080
+
+
+def test_resolve_transport_http_binds_all_interfaces() -> None:
+    result = mcp_server._resolve_transport({"RCG_MCP_TRANSPORT": "http", "PORT": "1234"})
+    assert result == ("streamable-http", "0.0.0.0", 1234)
+
+
+def test_resolve_transport_streamable_http_alias() -> None:
+    transport, host, _ = mcp_server._resolve_transport(
+        {"RCG_MCP_TRANSPORT": "streamable-http"}
+    )
+    assert transport == "streamable-http"
+    assert host == "0.0.0.0"
+
+
+def test_resolve_transport_sse() -> None:
+    transport, host, port = mcp_server._resolve_transport(
+        {"RCG_MCP_TRANSPORT": "sse", "PORT": "9000"}
+    )
+    assert transport == "sse"
+    assert host == "0.0.0.0"
+    assert port == 9000
+
+
+def test_resolve_transport_bad_port_falls_back() -> None:
+    _, _, port = mcp_server._resolve_transport(
+        {"RCG_MCP_TRANSPORT": "http", "PORT": "not-a-number"}
+    )
+    assert port == 8080
+
+
+def test_check_rules_markdown_finds_conflict() -> None:
+    rules = (
+        "# Deploy policy\n"
+        "- You MUST deploy to production after tests pass.\n"
+        "- You MUST NOT deploy to production without human approval.\n"
+    )
+    result = mcp_server._check_rules_impl(rules, fmt="markdown")
+    assert set(result) == {"n_rules", "score", "by_type", "findings"}
+    assert result["n_rules"] > 0
+    assert result["findings"], "conflicting MUST vs MUST_NOT should yield a finding"
+    finding = result["findings"][0]
+    assert set(finding) == {"type", "severity", "reason", "rule_a", "rule_b"}
+    assert set(finding["rule_a"]) == {"text", "file", "modality", "action_class"}
+    assert finding["rule_a"]["file"] == "CLAUDE.md"
+
+
+def test_check_rules_cedar_forbid_is_must_not() -> None:
+    policy = 'forbid(principal, action == Action::"DeleteObject", resource);\n'
+    result = mcp_server._check_rules_impl(policy, fmt="cedar")
+    assert result["n_rules"] == 1
+    # The cedar `forbid` verb extracts as a MUST_NOT directive.
+    modalities = {f["modality"] for f in result["findings"]}
+    # No second rule to conflict with, so assert via the tool round-trip instead.
+    rule_modality = _single_rule_modality(policy, "cedar")
+    assert rule_modality == "MUST_NOT"
+    assert "MUST_NOT" in modalities or not result["findings"]
+
+
+def _single_rule_modality(text: str, fmt: str) -> str:
+    """Extract one rule's modality through the same pipeline check_rules uses."""
+    import tempfile
+    from pathlib import Path
+
+    from rcg.mcp_server import _FORMAT_FILENAMES, _load_rules
+
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / _FORMAT_FILENAMES[fmt]
+        target.write_text(text, encoding="utf-8")
+        rules = _load_rules(str(target), "mock")
+    assert rules, "cedar forbid policy should extract one rule"
+    return rules[0].directive.modality.value
+
+
+def test_check_rules_tool_callable() -> None:
+    rules = "- You MUST always run tests.\n"
+    result = mcp_server.check_rules(rules)
+    assert result["n_rules"] > 0
+
+
+def test_ingest_to_graph_no_neo4j_uri() -> None:
+    result = mcp_server._ingest_to_graph_impl("examples/gemini_incident", env={})
+    assert result == {"written": False, "reason": "NEO4J_URI not set"}
+
+
+def test_ingest_to_graph_tool_callable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NEO4J_URI", raising=False)
+    result = mcp_server.ingest_to_graph("examples/gemini_incident")
+    assert result["written"] is False

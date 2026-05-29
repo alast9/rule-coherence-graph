@@ -1,0 +1,33 @@
+# Fly.io deployment for the hosted RCG MCP demo. See docs/hosted-mcp.md.
+# Rename `app` to your own globally-unique name before `fly deploy`.
+app = "rcg-mcp-demo"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  RCG_MCP_TRANSPORT = "streamable-http"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero between sessions to keep the demo cheap.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  # The MCP endpoint lives at /mcp; a TCP check is the most robust liveness
+  # signal because the streamable-http route expects MCP-framed requests.
+  [[http_service.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+# Required secrets (set with `fly secrets set KEY=value`, never commit them):
+#   ANTHROPIC_API_KEY   optional — only if you want the `anthropic` provider
+#   NEO4J_URI           optional — e.g. neo4j+s://<id>.databases.neo4j.io
+#   NEO4J_USERNAME      optional — usually `neo4j`
+#   NEO4J_PASSWORD      optional — AuraDB password
+#   RCG_MCP_TOKEN       optional — see the Security note in docs/hosted-mcp.md

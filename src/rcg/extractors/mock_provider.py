@@ -16,6 +16,29 @@ from rcg.schema import Directive, Modality, RawRule, Rule, Source, Trigger
 
 PROMPT_VERSION = "mock.v3"
 
+# Policy-as-code action references (OPA Rego / AWS Cedar). Checked before the
+# natural-language heuristics so an explicit machine-readable action reference
+# (e.g. ``Action::"DeleteObject"`` or ``input.method == "DELETE"``) lands on the
+# same coarse class as the prose rule it should conflict with — without this the
+# generic words around it (e.g. "production") would mis-class the policy.
+_POLICY_ACTION_RULES: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(
+            r'(?:Action::|input\.action\s*==\s*)"[^"]*(?:delete|remove|destroy|wipe)[^"]*"'
+            r'|input\.method\s*==\s*"DELETE"',
+            re.I,
+        ),
+        "fs.destructive",
+    ),
+    (
+        re.compile(
+            r'(?:Action::|input\.action\s*==\s*)"[^"]*(?:deploy|release|publish)[^"]*"',
+            re.I,
+        ),
+        "deploy.production",
+    ),
+]
+
 # Action-class heuristics. Order matters — first match wins. The order is
 # arranged so the *most specific* class wins (rules-meta before deploy before
 # generic confirm/destructive/scope).
@@ -31,6 +54,16 @@ _ACTION_CLASS_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"confirm|confirmation|xác nhận|yêu cầu", re.I), "agent.confirm"),
     (re.compile(r"scope|unrelated files|touch.*files", re.I), "agent.scope"),
     (re.compile(r"destructive|delete|wipe", re.I), "fs.destructive"),
+]
+
+# Policy-as-code modality signals (OPA Rego / AWS Cedar). A denial keyword
+# (``forbid``/``deny``) reads as MUST_NOT; a grant keyword (``permit``/``allow``)
+# reads as MAY. Checked before the natural-language modality rules but only as an
+# *additional* signal so they never regress markdown phrasing — they fire only
+# when the keyword appears as a policy verb (word-boundary match).
+_POLICY_MODALITY_RULES: list[tuple[re.Pattern[str], Modality]] = [
+    (re.compile(r"\b(forbid|deny)\b", re.I), Modality.MUST_NOT),
+    (re.compile(r"\b(permit|allow)\b", re.I), Modality.MAY),
 ]
 
 # Modality heuristics. Order matters; first hit wins. Negative forms come first
@@ -103,6 +136,11 @@ class MockProvider:
 
 
 def _classify_action(text: str) -> str:
+    # Machine-readable policy action references win first so a Rego/Cedar rule
+    # lands on the same coarse class as the prose rule it should conflict with.
+    for pattern, cls in _POLICY_ACTION_RULES:
+        if pattern.search(text):
+            return cls
     for pattern, cls in _ACTION_CLASS_RULES:
         if pattern.search(text):
             return cls
@@ -111,6 +149,11 @@ def _classify_action(text: str) -> str:
 
 def _classify_modality(text: str) -> Modality:
     for pattern, mod in _MODALITY_RULES:
+        if pattern.search(text):
+            return mod
+    # Fall back to policy denial/grant keywords only when natural-language
+    # phrasing was inconclusive, so markdown rules never regress.
+    for pattern, mod in _POLICY_MODALITY_RULES:
         if pattern.search(text):
             return mod
     return Modality.SHOULD

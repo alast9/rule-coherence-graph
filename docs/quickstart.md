@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: alast9/rule-coherence-graph@v0.4.0
+      - uses: alast9/rule-coherence-graph@v0.5.0
         with:
           path: .agent/rules
           min-score: "0.8"
