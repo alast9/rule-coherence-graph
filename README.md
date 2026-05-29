@@ -56,6 +56,28 @@ uv run rcg ingest examples/gemini_incident   # writes Rule/RuleFile/CONFLICTS_WI
 
 ---
 
+## Install
+
+Run it without cloning — straight from GitHub (works today):
+
+```bash
+uvx --from git+https://github.com/alast9/rule-coherence-graph rcg check examples/gemini_incident
+```
+
+Once published to PyPI:
+
+```bash
+pipx install rule-coherence-graph        # or: uv tool install rule-coherence-graph
+rcg check ./path/to/your/agent/rules     # point it at your own .cursorrules / CLAUDE.md / .agent/rules
+```
+
+`rcg` falls back to the offline heuristic extractor when `ANTHROPIC_API_KEY` is
+unset, so you get a result with zero setup. Set the key (and `--provider
+anthropic`) for LLM-quality extraction, and `docker compose up -d neo4j` to also
+persist the graph.
+
+---
+
 ## Why this exists
 
 In May 2026 a Gemini agent deleted 28,745 lines of code and fabricated a
