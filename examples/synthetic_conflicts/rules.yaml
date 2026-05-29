@@ -1,0 +1,3 @@
+rules:
+  - Automatically deploy every merge to main to production without manual approval.
+  - Pin all dependencies to exact versions.

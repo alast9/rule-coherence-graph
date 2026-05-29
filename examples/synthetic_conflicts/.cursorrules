@@ -1,0 +1,3 @@
+Always auto-merge passing PRs without human review.
+Keep functions short and focused.
+Prefer explicit error handling over silent failures.

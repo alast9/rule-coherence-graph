@@ -99,11 +99,11 @@ conflict was invisible until it caused damage.
 ```
             ┌──────────── CLI (rcg ingest | check) ────────────┐
             │                                                   │
-      ┌─────▼─────┐   ┌──────────────┐   ┌────────────┐   ┌─────▼──────┐
-      │  Parsers  │──▶│ LLM Extractor│──▶│  Detectors │──▶│  Reports   │
-      │ (markdown)│   │ + hash cache │   │ (syntactic)│   │ (markdown) │
-      └───────────┘   └──────────────┘   └─────┬──────┘   └────────────┘
-                                               │
+      ┌─────▼──────┐  ┌──────────────┐   ┌────────────┐   ┌─────▼──────┐
+      │  Parsers   │─▶│ LLM Extractor│──▶│  Detectors │──▶│  Reports   │
+      │ (md/cursor │  │ + hash cache │   │ (syntactic)│   │ (markdown) │
+      │  /mdc/yaml)│  └──────────────┘   └─────┬──────┘   └────────────┘
+      └────────────┘                          │
                                         ┌──────▼──────┐
                                         │    Neo4j    │
                                         │  rule graph │
@@ -111,7 +111,9 @@ conflict was invisible until it caused damage.
 ```
 
 - **Parsers** read a file and emit raw rule strings with source metadata. Adding
-  a format is a single new parser class — nothing downstream changes.
+  a format is a single new parser class — nothing downstream changes. Today RCG
+  parses markdown (`CLAUDE.md`, `AGENTS.md`, `memory.md`, `.agent/rules/*.md`),
+  Cursor `.cursorrules` and `.mdc` files, and rule-related YAML/JSON files.
 - **Extractor** turns each raw rule into a canonical `Rule` via a provider
   (`anthropic`, `mock`, or `auto`). Results are cached by content hash + model +
   prompt version, so extraction is deterministic and re-runs are free.
@@ -256,7 +258,8 @@ pytest/ruff/mypy, packaged with `uv`.
 
 ## Status & scope
 
-This repo implements markdown ingestion → LLM extraction (with cache) →
+This repo implements multi-format ingestion (markdown, `.cursorrules`, `.mdc`,
+YAML/JSON) → LLM extraction (with cache) →
 **syntactic, semantic, and precedence** detection passes → a **coherence score**
 and grouped markdown report, with an **accepted-conflicts baseline**, optional
 Neo4j persistence, and a faithful incident example that works end-to-end.
@@ -276,9 +279,11 @@ Also implemented: the `rcg explain` command, an **MCP server** (`rcg-mcp`) expos
 `check_corpus` / `explain_action` / `score_corpus` to agents, and a reusable **GitHub Action**
 (see below).
 
-Deferred (see [`docs/SPEC.md`](docs/SPEC.md) for the full design): a bundled
-production-grade embedding model (the `embeddings` extra is opt-in), `diff`/`graph export`
-commands, an HTTP API, and additional parsers (`.cursorrules`, `.mdc`, YAML/JSON).
+RCG now ingests markdown, Cursor `.cursorrules` and `.mdc`, and rule-related
+YAML/JSON files (a new format is still just one new parser class). Deferred (see
+[`docs/SPEC.md`](docs/SPEC.md) for the full design): a bundled production-grade
+embedding model (the `embeddings` extra is opt-in), `diff`/`graph export`
+commands, an HTTP API, and policy-language parsers such as OPA Rego and Cedar.
 
 **Honest about limits:** heuristic/LLM extraction has false positives. Every
 flagged conflict includes both rules' original text as evidence so a human can

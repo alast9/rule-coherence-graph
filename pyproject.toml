@@ -1,6 +1,6 @@
 [project]
 name = "rule-coherence-graph"
-version = "0.2.0"
+version = "0.3.0"
 description = "Rule Coherence Graph — detect conflicts in AI agent rule corpora."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,6 +31,7 @@ dependencies = [
     "pydantic>=2.7",
     "neo4j>=5.20",
     "anthropic>=0.40",
+    "pyyaml>=6",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +42,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "mcp>=1.2",
+    "types-PyYAML",
 ]
 embeddings = [
     "sentence-transformers>=3.0",

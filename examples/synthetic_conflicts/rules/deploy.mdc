@@ -1,0 +1,10 @@
+---
+description: Deployment safety rules
+globs: ["**/deploy/**"]
+alwaysApply: true
+---
+
+# Deployment
+
+- Require explicit human approval before any deploy to production.
+- Roll back automatically if health checks fail after a deploy.
