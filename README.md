@@ -155,6 +155,33 @@ MATCH (r:Rule) WHERE r.action_class STARTS WITH 'rules.' RETURN r;
 
 ---
 
+## What the graph looks like
+
+After `rcg ingest examples/gemini_incident`, the corpus becomes a typed graph in
+Neo4j: `Rule` nodes (orange) link to their source `RuleFile` (blue) via
+`DERIVED_FROM`, and the syntactic pass adds `CONFLICTS_WITH` edges
+(red = critical, orange = high).
+
+![RCG rule graph in Neo4j](docs/img/rcg-neo4j-graph.png)
+
+Querying just the conflicts —
+`MATCH (a:Rule)-[c:CONFLICTS_WITH]-(b:Rule) RETURN a,c,b` — makes the
+contradictions explicit. Each rule is colored by its source file and annotated
+with its modality; edge labels show severity:
+
+![RCG conflicts in Neo4j](docs/img/rcg-neo4j-conflicts.png)
+
+The **critical** edge is the rule-corpus meta-conflict: the third-party package
+grants the agent `MAY modify its own rule files` while the project says rule
+files are read-only (`MUST_NOT`). The **high** edges are the autonomy-vs-safety
+clashes — auto-deploy / never-prompt vs require-confirmation — including the
+Vietnamese smuggled rule conflicting with the English confirmation rule.
+
+> These images are rendered from the **live Neo4j graph**. Open
+> <http://localhost:7474/browser/> and run the Cypher above to explore it interactively.
+
+---
+
 ## Development
 
 ```bash
