@@ -18,7 +18,7 @@ from rcg.extractors.anthropic_provider import AnthropicProvider
 from rcg.extractors.extract import extract_all
 from rcg.extractors.mock_provider import MockProvider
 from rcg.parsers.discovery import discover
-from rcg.providers.embedding import HashingEmbeddingProvider
+from rcg.providers.embedding import EmbeddingProvider, HashingEmbeddingProvider
 from rcg.providers.llm import LLMProvider
 from rcg.reports.markdown import render_report
 from rcg.schema import Rule
@@ -76,6 +76,32 @@ def _build_judge(provider_name: str) -> SemanticJudge:
     if provider_name == "auto" and os.environ.get("ANTHROPIC_API_KEY"):
         return AnthropicJudge()
     return MockJudge()
+
+
+def _build_benchmark_judge(kind: str) -> SemanticJudge:
+    """Resolve the explicit --judge choice for the benchmark command."""
+    if kind == "mock":
+        return MockJudge()
+    if kind == "anthropic":
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            typer.echo(
+                "error: ANTHROPIC_API_KEY is not set. Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        return AnthropicJudge()
+    raise typer.BadParameter(f"unknown judge: {kind!r}")
+
+
+def _build_embedder(kind: str) -> EmbeddingProvider:
+    """Resolve the explicit --embedder choice for the benchmark command."""
+    if kind == "hashing":
+        return HashingEmbeddingProvider()
+    if kind == "sentence-transformers":
+        from rcg.providers.embedding import SentenceTransformerEmbeddingProvider
+
+        return SentenceTransformerEmbeddingProvider()
+    raise typer.BadParameter(f"unknown embedder: {kind!r}")
 
 
 def _ingest(
@@ -300,6 +326,44 @@ def score(
     for ftype in ("syntactic", "semantic", "precedence"):
         if ftype in report.by_type:
             typer.echo(f"  {ftype}: {report.by_type[ftype]}")
+
+
+@app.command()
+def benchmark(
+    dataset: Path | None = typer.Argument(
+        None, help="JSONL labeled dataset (defaults to benchmarks/dataset.jsonl)."
+    ),
+    embedder: str = typer.Option("hashing", "--embedder", help="hashing|sentence-transformers"),
+    judge: str = typer.Option("mock", "--judge", help="mock|anthropic"),
+    semantic: bool = typer.Option(
+        True, "--semantic/--no-semantic", help="Run the semantic pass in the benchmark."
+    ),
+    sim_threshold: float = typer.Option(0.55, "--sim-threshold", help="Semantic similarity gate."),
+    out: Path | None = typer.Option(None, "--out", help="Write the markdown table to this file."),
+) -> None:
+    """Run the precision/recall benchmark over a labeled dataset (exits 0)."""
+    from rcg.benchmark import DEFAULT_DATASET, evaluate, load_dataset
+
+    path = dataset if dataset is not None else DEFAULT_DATASET
+    if not path.exists():
+        typer.echo(
+            f"error: dataset not found: {path}. Pass a DATASET path explicitly.", err=True
+        )
+        raise typer.Exit(code=2)
+
+    pairs = load_dataset(path)
+    report = evaluate(
+        pairs,
+        embedder=_build_embedder(embedder),
+        judge=_build_benchmark_judge(judge),
+        semantic=semantic,
+        sim_threshold=sim_threshold,
+    )
+    markdown = report.to_markdown()
+    typer.echo(markdown)
+    if out is not None:
+        out.write_text(markdown + "\n", encoding="utf-8")
+        typer.echo(f"Wrote benchmark table to {out}", err=True)
 
 
 if __name__ == "__main__":

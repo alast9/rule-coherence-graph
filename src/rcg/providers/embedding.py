@@ -85,9 +85,7 @@ class SentenceTransformerEmbeddingProvider:
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
         try:
-            from sentence_transformers import (  # type: ignore[import-not-found]
-                SentenceTransformer,
-            )
+            from sentence_transformers import SentenceTransformer
         except ImportError as exc:  # pragma: no cover - exercised only without extra
             raise ImportError(
                 "SentenceTransformerEmbeddingProvider requires 'sentence-transformers'. "

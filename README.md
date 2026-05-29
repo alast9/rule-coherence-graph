@@ -161,6 +161,7 @@ with a "require confirmation" rule.
 | `rcg check <path>` | Ingest + run the detection passes; exits non-zero if any (non-baselined) finding is found. |
 | `rcg score <path>` | Print the corpus coherence score and a by-type breakdown (always exits 0). |
 | `rcg explain "<action>" <path>` | Show which rules fire for a hypothetical action and whether they conflict. |
+| `rcg benchmark [dataset]` | Run the precision/recall benchmark for the detection passes over a labeled dataset (default `benchmarks/dataset.jsonl`). |
 
 `rcg explain` classifies the action into an action class, lists every rule that fires for it
 (within an optional `--scope` glob), and reports any direct conflicts or precedence ambiguities
@@ -192,6 +193,37 @@ uv run rcg check examples/gemini_incident --update-baseline
 The default semantic recall uses a dependency-free `HashingEmbeddingProvider`
 that captures *lexical* overlap only — it is a stand-in. For real semantic
 recall (synonyms, paraphrase) install a true embedding model:
+
+```bash
+pip install 'rule-coherence-graph[embeddings]'
+```
+
+## Benchmark
+
+RCG ships a precision/recall benchmark for the detection passes over a labeled
+dataset of **62 rule pairs** (26 `conflict`, 36 `ok`). Full breakdown and
+reproduction commands are in [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
+
+| Config | Pass | Precision | Recall | F1 |
+| --- | --- | --- | --- | --- |
+| syntactic only | syntactic | 1.000 | 0.500 | 0.667 |
+| + semantic (hashing, lexical) + MockJudge | combined | 0.867 | 0.500 | 0.634 |
+| + semantic (sentence-transformers) + MockJudge | combined | 0.619 | 0.500 | 0.553 |
+
+Reproduce:
+
+```bash
+uv run rcg benchmark benchmarks/dataset.jsonl --embedder hashing --judge mock --semantic
+```
+
+A real embedding model widens candidate recall (the semantic pass clears the
+similarity gate on more pairs: recall 0.269 → 0.462), but the genuinely
+keyword-disjoint `semantic`-category conflicts need a **reasoning judge**
+(`--judge anthropic`) to convert that recall into true positives — the offline
+`MockJudge` only sees opposing modality / approval stance. Caveats: the dataset
+is **small and synthetic** (illustrative, not sampled from production), and the
+default embedder is **lexical** (bag-of-words hashing). For real semantic recall,
+install the embeddings extra:
 
 ```bash
 pip install 'rule-coherence-graph[embeddings]'
@@ -274,6 +306,9 @@ Neo4j persistence, and a faithful incident example that works end-to-end.
 - **Coherence score** — type-weighted, in `[0, 1]`; gate CI with `--min-score`.
 - **Baseline** — `--update-baseline` records reviewed findings; later runs
   suppress them and surface only what is new.
+- **Benchmark** — `rcg benchmark` reports per-pass / per-category
+  precision/recall/F1 over a labeled dataset; see
+  [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
 
 Also implemented: the `rcg explain` command, an **MCP server** (`rcg-mcp`) exposing
 `check_corpus` / `explain_action` / `score_corpus` to agents, and a reusable **GitHub Action**

@@ -1,6 +1,6 @@
 [project]
 name = "rule-coherence-graph"
-version = "0.3.0"
+version = "0.4.0"
 description = "Rule Coherence Graph — detect conflicts in AI agent rule corpora."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -83,6 +83,13 @@ files = ["src/rcg"]
 
 [[tool.mypy.overrides]]
 module = "mcp.*"
+ignore_missing_imports = true
+
+# sentence-transformers lives only in the optional `embeddings` extra and ships no
+# type stubs; ignore it unconditionally so mypy is green whether or not the extra
+# is installed (no brittle inline `type: ignore` that flips to "unused").
+[[tool.mypy.overrides]]
+module = "sentence_transformers.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
