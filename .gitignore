@@ -8,6 +8,7 @@ __pycache__/
 .rcg/
 dist/
 build/
+site/
 .DS_Store
 .env
 uv.lock
