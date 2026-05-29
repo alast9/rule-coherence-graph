@@ -1,8 +1,10 @@
 # Rule Coherence Graph (RCG)
 
-[![CI](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/rule-coherence-graph)](https://pypi.org/project/rule-coherence-graph/) [![Python](https://img.shields.io/pypi/pyversions/rule-coherence-graph)](https://pypi.org/project/rule-coherence-graph/) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![CI](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/rule-coherence-graph)](https://pypi.org/project/rule-coherence-graph/) [![Python](https://img.shields.io/pypi/pyversions/rule-coherence-graph)](https://pypi.org/project/rule-coherence-graph/) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Docs](https://img.shields.io/badge/docs-github.io-ff5722)](https://alast9.github.io/rule-coherence-graph/)
 
 **Detect conflicts in the rule corpora that govern AI coding agents — before the agent does.**
+
+📖 **Docs:** https://alast9.github.io/rule-coherence-graph/
 
 AI coding agents (Cursor, Claude Code, Cline, Gemini in agent IDEs, custom
 LangGraph/Pydantic-AI agents) are governed by rules drawn from many files:
