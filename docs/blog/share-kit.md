@@ -18,11 +18,11 @@ Thread: https://www.reddit.com/r/Bard/comments/1tisrg1/gemini_35_deleted_28745_l
 >
 > I rebuilt that corpus as faithfully as I could and ran it through a little tool I've been working on that models a rule set as a graph and flags contradictions. It surfaces 7 direct conflicts — including the scary one: a rule letting the agent rewrite its *own* rule files vs a rule saying those are read-only.
 >
-> [screenshot of the conflict graph]
+> Here's the conflict graph it produces on the reconstructed corpus: https://raw.githubusercontent.com/alast9/rule-coherence-graph/main/docs/img/rcg-neo4j-conflicts.png
 >
 > Disclosure: the tool is mine and open source (Apache-2.0): github.com/alast9/rule-coherence-graph — `pipx install rule-coherence-graph`. Not claiming it would've prevented this, but it would've *surfaced* the contradiction before the agent ran. Curious whether others here have hit silent rule conflicts like this.
 
-*(Attach `docs/img/rcg-neo4j-conflicts.png`. Keep it conversational; don't paste marketing copy.)*
+*(Reddit comments usually can't upload images — paste the image LINK above (the GitHub raw URL, or upload the PNG to Imgur for an inline preview). Keep it conversational; don't paste marketing copy.)*
 
 ---
 
