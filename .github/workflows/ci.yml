@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint, type-check, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff (lint)
+        run: uv run ruff check src tests
+
+      - name: Mypy (type check, strict)
+        run: uv run mypy
+
+      - name: Pytest (unit + offline integration)
+        run: uv run pytest -q
+
+  integration:
+    name: Neo4j integration tests
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.ref == 'refs/heads/main'
+    services:
+      neo4j:
+        image: neo4j:5.20
+        env:
+          NEO4J_AUTH: neo4j/rcgdevpassword
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://localhost:7474 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      RCG_RUN_INTEGRATION: "1"
+      RCG_NEO4J_URI: bolt://localhost:7687
+      RCG_NEO4J_USER: neo4j
+      RCG_NEO4J_PASSWORD: rcgdevpassword
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Integration tests (Neo4j-backed)
+        run: uv run pytest tests/integration -q
