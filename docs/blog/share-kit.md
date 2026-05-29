@@ -20,6 +20,8 @@ Thread: https://www.reddit.com/r/Bard/comments/1tisrg1/gemini_35_deleted_28745_l
 >
 > Here's the conflict graph it produces on the reconstructed corpus: https://raw.githubusercontent.com/alast9/rule-coherence-graph/main/docs/img/rcg-neo4j-conflicts.png
 >
+> Full write-up (how it works + the graph): https://medium.com/@alast9/your-ai-coding-agent-doesnt-have-a-bug-its-rulebook-has-a-contradiction-cb517b5a8b90
+>
 > Disclosure: the tool is mine and open source (Apache-2.0): github.com/alast9/rule-coherence-graph — `pipx install rule-coherence-graph`. Not claiming it would've prevented this, but it would've *surfaced* the contradiction before the agent ran. Curious whether others here have hit silent rule conflicts like this.
 
 *(Reddit comments usually can't upload images — paste the image LINK above (the GitHub raw URL, or upload the PNG to Imgur for an inline preview). Keep it conversational; don't paste marketing copy.)*
@@ -37,14 +39,14 @@ Thread: https://www.reddit.com/r/Bard/comments/1tisrg1/gemini_35_deleted_28745_l
 >
 > It analyzes, it doesn't enforce at runtime (that's OPA/Cedar's job downstream). Ships an example reconstructing the incident's conflict pattern.
 >
-> `pipx install rule-coherence-graph` · repo: https://github.com/alast9/rule-coherence-graph
+> `pipx install rule-coherence-graph` · repo: https://github.com/alast9/rule-coherence-graph · write-up: https://medium.com/@alast9/your-ai-coding-agent-doesnt-have-a-bug-its-rulebook-has-a-contradiction-cb517b5a8b90
 >
 > Honest limitation: extraction has false positives, so every flagged conflict shows both rules' text + a confidence score for a human to adjudicate. Feedback welcome.
 
 ---
 
 ## 3. Optional — r/cursor, r/ChatGPTCoding, r/LocalLLaMA
-> If you run agents off `.cursorrules` / `CLAUDE.md` / rule packs: those files routinely contradict each other, and the agent silently resolves it (usually toward the most forceful rule). I built an open-source linter that models the rule corpus as a graph and flags the contradictions — coherence score, an MCP server to check pre-flight, and a GitHub Action that comments on PRs. `pipx install rule-coherence-graph`. Repo: github.com/alast9/rule-coherence-graph — would love to see what it flags on real corpora.
+> If you run agents off `.cursorrules` / `CLAUDE.md` / rule packs: those files routinely contradict each other, and the agent silently resolves it (usually toward the most forceful rule). I built an open-source linter that models the rule corpus as a graph and flags the contradictions — coherence score, an MCP server to check pre-flight, and a GitHub Action that comments on PRs. `pipx install rule-coherence-graph`. Repo: github.com/alast9/rule-coherence-graph · write-up: https://medium.com/@alast9/your-ai-coding-agent-doesnt-have-a-bug-its-rulebook-has-a-contradiction-cb517b5a8b90 — would love to see what it flags on real corpora.
 
 *(Tailor each subreddit; read the rules — some require a [P]/self-promo flair or limit links.)*
 
