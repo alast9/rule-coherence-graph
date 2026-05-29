@@ -1,6 +1,6 @@
 # Rule Coherence Graph (RCG)
 
-[![CI](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml)
+[![CI](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/alast9/rule-coherence-graph/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/rule-coherence-graph)](https://pypi.org/project/rule-coherence-graph/) [![Python](https://img.shields.io/pypi/pyversions/rule-coherence-graph)](https://pypi.org/project/rule-coherence-graph/) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **Detect conflicts in the rule corpora that govern AI coding agents — before the agent does.**
 
@@ -58,17 +58,15 @@ uv run rcg ingest examples/gemini_incident   # writes Rule/RuleFile/CONFLICTS_WI
 
 ## Install
 
-Run it without cloning — straight from GitHub (works today):
-
-```bash
-uvx --from git+https://github.com/alast9/rule-coherence-graph rcg check examples/gemini_incident
-```
-
-Once published to PyPI:
-
 ```bash
 pipx install rule-coherence-graph        # or: uv tool install rule-coherence-graph
 rcg check ./path/to/your/agent/rules     # point it at your own .cursorrules / CLAUDE.md / .agent/rules
+```
+
+Or run it once without installing:
+
+```bash
+uvx --from rule-coherence-graph rcg check examples/gemini_incident
 ```
 
 `rcg` falls back to the offline heuristic extractor when `ANTHROPIC_API_KEY` is
