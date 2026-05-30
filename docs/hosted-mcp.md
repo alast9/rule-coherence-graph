@@ -22,6 +22,41 @@ instance for graph persistence.
       and only expose the app inside your organisation.
     - Run your own instance instead of sharing one.
 
+## Environment variables
+
+This is the single source of truth for every environment variable the MCP
+server reads. All have safe defaults: with none set, the server runs locally
+over stdio with no guardrails and no graph, exactly as it always has.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RCG_MCP_TRANSPORT` | `stdio` | Transport: `stdio` (default, local clients), `http`/`streamable-http` (the hosted demo), or `sse`. |
+| `PORT` | `8080` | TCP port the HTTP/SSE transports listen on. Ignored for stdio. |
+| `RCG_MCP_ALLOWED_HOSTS` | (unset) | Comma-separated hosts (`host` or `host:port`) added to the DNS-rebinding allow-list. **Required for a public hostname** — FastMCP's streamable-HTTP transport allows only localhost Host headers by default, so a public host returns HTTP 421 without this. Example: `rcg-mcp-demo.fly.dev`. Keeps the protection on and derives matching `https://`/`http://` origins. |
+| `RCG_MCP_DISABLE_DNS_REBINDING_PROTECTION` | (unset) | Truthy (`1`/`true`/`yes`) **disables** DNS-rebinding protection entirely — an escape hatch. Prefer `RCG_MCP_ALLOWED_HOSTS`: disabling the protection accepts any Host header, which removes a DNS-rebinding defense, so only use it if you front the server with your own auth/proxy. |
+| `RCG_PUBLIC_DEMO` | (unset) | Master switch for the public-demo guardrails. Truthy (`1`/`true`/`yes`) enables every `RCG_MAX_*`/`RCG_GRAPH_MAX_NODES`/`RCG_RATE_LIMIT_PER_MIN` limit below. Unset = fully unrestricted. |
+| `RCG_MAX_INPUT_BYTES` | `50000` | Max UTF-8 byte size of `check_rules` input text (demo mode only). |
+| `RCG_MAX_RULES` | `200` | Max rules extracted per `check_rules` call (demo mode only). |
+| `RCG_GRAPH_MAX_NODES` | `5000` | Node count at which the graph auto-clears before an `ingest_to_graph` write (demo mode only). |
+| `RCG_RATE_LIMIT_PER_MIN` | `30` | Process-wide requests allowed per trailing 60s window (demo mode only). The hosted `fly.toml` raises this to `120`. |
+| `RCG_METRICS_PORT` | `9091` | Port for the Prometheus `/metrics` endpoint (HTTP transports only; must differ from `PORT`). Setting it also enables the metrics server. |
+| `NEO4J_URI` | (unset) | Bolt **Connection URI** `neo4j+s://<id>.databases.neo4j.io` — **not** the Query API URL. Optional; enables `ingest_to_graph`. |
+| `NEO4J_USERNAME` | `neo4j` | AuraDB username. **On AuraDB this is the instance id (e.g. `ac3f157b`), not literally `neo4j`** — see the callout below. (`NEO4J_USER` is also accepted.) |
+| `NEO4J_PASSWORD` | (unset) | AuraDB password (shown only once at instance creation). |
+
+On the hosted demo, the non-secret variables — `RCG_MCP_TRANSPORT`, `PORT`,
+`RCG_PUBLIC_DEMO`, `RCG_METRICS_PORT`, `RCG_RATE_LIMIT_PER_MIN`, and
+`RCG_MCP_ALLOWED_HOSTS` — are set as Fly `[env]` in `fly.toml`. The three
+`NEO4J_*` values are secrets and are set with `fly secrets set` (never committed
+to `fly.toml`).
+
+!!! warning "AuraDB username is the instance id, not `neo4j`"
+    A very common mistake: an AuraDB instance's username is **the instance id**
+    shown in [console.neo4j.io](https://console.neo4j.io) (e.g. `ac3f157b`), not
+    the literal string `neo4j`. Using `neo4j` causes a
+    `Neo.ClientError.Security.Unauthorized` auth failure. Copy the username from
+    the instance's credentials exactly.
+
 ## Cost & guardrails
 
 The bundled `fly.toml` targets a **~$50/month** budget while staying cheap in
@@ -47,19 +82,10 @@ demo.
 
 ### Tunable limits
 
-All limits have safe defaults; overriding them is optional.
-
-| Env var | Default | Meaning |
-| --- | --- | --- |
-| `RCG_PUBLIC_DEMO` | (unset) | Master switch. Truthy (`1`/`true`/`yes`, case-insensitive) enables all guardrails below. |
-| `RCG_MAX_INPUT_BYTES` | `50000` | Max UTF-8 byte size of `check_rules` input text. |
-| `RCG_MAX_RULES` | `200` | Max rules extracted per `check_rules` call. |
-| `RCG_GRAPH_MAX_NODES` | `5000` | Node count at which the graph auto-clears before ingest. |
-| `RCG_RATE_LIMIT_PER_MIN` | `30` (120 in the hosted config) | Requests allowed per trailing 60s window. |
-| `RCG_METRICS_PORT` | `9091` | Port for the Prometheus metrics endpoint (HTTP transports only). |
-
-Each limit is parsed defensively: a missing or invalid value falls back to its
-default.
+All limits have safe defaults; overriding them is optional. The full list of
+demo-guardrail variables (and every other variable the server reads) lives in
+the [Environment variables](#environment-variables) reference below. Each limit
+is parsed defensively: a missing or invalid value falls back to its default.
 
 ### Graph auto-clear at cap
 
@@ -135,8 +161,11 @@ Graph persistence is optional — every tool works without it. To enable it:
 1. Sign in at [console.neo4j.io](https://console.neo4j.io) and create a free
    **AuraDB** instance.
 2. When the instance is created, copy the **Connection URI** — it uses the
-   `neo4j+s://` scheme, e.g. `neo4j+s://abcd1234.databases.neo4j.io`.
-3. Copy the generated **username** (usually `neo4j`) and **password**. The
+   `neo4j+s://` scheme, e.g. `neo4j+s://ac3f157b.databases.neo4j.io`. Use this
+   Bolt Connection URI, **not** the Query API URL shown elsewhere in the
+   console.
+3. Copy the generated **username** and **password**. On AuraDB the username is
+   the **instance id** (e.g. `ac3f157b`), not the literal string `neo4j`; the
    password is shown only once.
 
 RCG passes the URI through unchanged, so the `neo4j+s://` (TLS) scheme that
@@ -154,7 +183,10 @@ fly deploy
 The bundled `fly.toml` serves over streamable HTTP on port 8080, forces HTTPS,
 pins a 512MB `shared-cpu-1x` VM, keeps one machine warm
 (`min_machines_running = 1`) to avoid cold starts, and exposes the custom
-metrics on port 9091 (scraped by Fly via the `[metrics]` block). The hosted
+metrics on port 9091 (scraped by Fly via the `[metrics]` block). It also sets
+`RCG_MCP_ALLOWED_HOSTS` to the app's public hostname — **without this the
+streamable-HTTP transport rejects the public host with HTTP 421** (see
+[Environment variables](#environment-variables)). The hosted
 image installs only the `[mcp]` extra; the `embeddings`
 extra (sentence-transformers/torch) is intentionally omitted to keep the image
 lean and fit the 512MB VM — `check_rules` defaults to the mock provider and a
@@ -167,10 +199,14 @@ All secrets are optional. Set only the ones you need:
 ```bash
 fly secrets set \
   ANTHROPIC_API_KEY=sk-ant-... \
-  NEO4J_URI=neo4j+s://abcd1234.databases.neo4j.io \
-  NEO4J_USERNAME=neo4j \
+  NEO4J_URI=neo4j+s://ac3f157b.databases.neo4j.io \
+  NEO4J_USERNAME=ac3f157b \
   NEO4J_PASSWORD=your-aura-password
 ```
+
+`NEO4J_URI` must be the Bolt **Connection URI** (`neo4j+s://…`), and
+`NEO4J_USERNAME` is the AuraDB **instance id**, not the literal `neo4j` — see
+[Environment variables](#environment-variables).
 
 Never commit secrets — `fly secrets set` stores them encrypted on Fly.
 
@@ -237,6 +273,48 @@ It returns the same shape as `check_corpus`:
 Supported `format` values: `markdown` (default), `cursorrules`, `cedar`,
 `rego`, `yaml`. The check runs offline with the deterministic mock extractor.
 
+## Smoke-test the deployment
+
+`scripts/smoke_test.py` is a standalone, stdlib-only client (no `mcp` package,
+no `requests`) that drives a deployed server end to end: it runs the MCP
+handshake, lists the tools, and verifies `check_rules` detects a MUST vs
+MUST_NOT conflict. Run it against the live demo (or your own URL):
+
+```bash
+# Default URL is https://rcg-mcp-demo.fly.dev/mcp
+python3 scripts/smoke_test.py
+
+# Your own deployment (positional or --url):
+python3 scripts/smoke_test.py https://my-app.fly.dev/mcp
+
+# Also exercise ingest_to_graph (needs NEO4J_* configured server-side):
+python3 scripts/smoke_test.py --graph --path examples/gemini_incident
+```
+
+A healthy deployment prints (exit code 0):
+
+```text
+RCG MCP smoke test → https://rcg-mcp-demo.fly.dev/mcp
+[PASS] initialize — session established, server='rcg'
+[PASS] tools/list — tools=check_corpus, explain_action, score_corpus, check_rules, ingest_to_graph
+[PASS] check_rules conflict — n_rules=2, findings=1
+
+SUMMARY: ALL CHECKS PASSED
+```
+
+With `--graph`, a successful write adds
+`[PASS] ingest_to_graph — written=true, n_rules=4, n_conflicts=2`. Any failed
+check makes the script exit 1.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `HTTP 421 Misdirected Request` on initialize | The streamable-HTTP transport's DNS-rebinding protection rejected the public Host header. Set `RCG_MCP_ALLOWED_HOSTS` to your hostname (e.g. `rcg-mcp-demo.fly.dev`) and redeploy. |
+| `Neo.ClientError.Security.Unauthorized` from `--graph` | Wrong AuraDB credentials. `NEO4J_USERNAME` must be the **instance id** (e.g. `ac3f157b`), not `neo4j`; recheck the password too. |
+| `ingest_to_graph` returns `written=true` but `n_rules=0` | The `examples/` directory is not in the server image, so the path resolved to nothing. The `Dockerfile` must `COPY examples ./examples`. |
+| `--graph` write fails after the app has been idle | AuraDB Free auto-pauses after 72h of inactivity. Resume the instance in [console.neo4j.io](https://console.neo4j.io) and retry. |
+
 ## Tools available over HTTP
 
 | Tool | Purpose |
@@ -262,7 +340,10 @@ local clients keep working unchanged:
 | `http` / `streamable-http` | streamable HTTP on `0.0.0.0:$PORT` |
 | `sse` | Server-Sent Events on `0.0.0.0:$PORT` |
 
-`PORT` defaults to `8080`.
+`PORT` defaults to `8080`. For the HTTP transports behind a public hostname,
+also set `RCG_MCP_ALLOWED_HOSTS` (or, as an escape hatch,
+`RCG_MCP_DISABLE_DNS_REBINDING_PROTECTION`) — see
+[Environment variables](#environment-variables).
 
 ## Authentication
 
