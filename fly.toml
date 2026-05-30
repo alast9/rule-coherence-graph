@@ -13,21 +13,38 @@ primary_region = "iad"
   # node cap + auto-clear). All RCG_* limits below default to safe values, so
   # local/stdio/self-hosted use (without this flag) stays unrestricted.
   RCG_PUBLIC_DEMO = "1"
+  # Serve the RCG-specific Prometheus metrics on this port (scraped by Fly via
+  # the [metrics] block below; visible in fly-metrics.net Grafana). Must differ
+  # from PORT.
+  RCG_METRICS_PORT = "9091"
+  # Hosted rate limit. The CODE default is 30/min; the larger ~$50 budget can
+  # comfortably serve more, so the hosted demo raises it to 120/min.
+  RCG_RATE_LIMIT_PER_MIN = "120"
+
+# Fly auto-scrapes this Prometheus text endpoint (~every 15s) and surfaces the
+# series in the managed Grafana at fly-metrics.net alongside Fly's built-ins.
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # Scale to zero between sessions to keep the demo cheap.
+  # ~$50/mo posture: keep one machine warm (no cold-start latency) but still
+  # auto-start/stop extra machines if the app is scaled to >1. A single warm
+  # 512MB machine is ~$3.32/mo, so min=1 is well within budget.
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
-  # Cap concurrent load so a single small VM is never overwhelmed; combined
-  # with the in-process rate limiter this bounds total demo throughput.
+  # Mock-provider checks are cheap, so allow generous concurrency. soft_limit
+  # is the threshold at which Fly starts another machine (when more exist);
+  # hard_limit is the hard ceiling per machine. The in-process rate limiter
+  # (RCG_RATE_LIMIT_PER_MIN) still bounds total throughput independently.
   [http_service.concurrency]
     type = "requests"
-    hard_limit = 25
-    soft_limit = 20
+    hard_limit = 200
+    soft_limit = 150
 
   # The MCP endpoint lives at /mcp; a TCP check is the most robust liveness
   # signal because the streamable-http route expects MCP-framed requests.
@@ -36,13 +53,22 @@ primary_region = "iad"
     timeout = "2s"
     grace_period = "10s"
 
-# Pin a small VM so it can never default large. 512MB shared-cpu-1x is
-# ~$3.32/mo worst-case running 24/7, and scale-to-zero (min_machines_running
-# = 0) makes the real cost far lower — keeping the demo under $5/mo. Do NOT
-# bump to 1GB: that would be ~$5.92/mo and exceed the budget.
+# Keep the VM small (shared-cpu-1x / 512MB, ~$3.32/mo warm 24/7). With a warm
+# machine the steady-state cost is ~$3-4/mo, leaving plenty of headroom under a
+# ~$50 budget. Memory is an optional dial — see DIAL-UP below; do NOT auto-bump
+# to 1GB here.
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"
+
+# DIAL-UP guide (~$50/mo budget). Watch the custom metrics + Fly built-ins in
+# fly-metrics.net Grafana to decide when to scale:
+#   * Rising `rcg_tool_calls_total` rate or `fly_instance_cpu` near saturation
+#     → add burst capacity:  fly scale count 2     (+~$3.32/mo per extra VM)
+#   * `fly_instance_exit_oom` events or memory pressure
+#     → more memory:         fly scale memory 1024  (1GB, ~$5.92/mo per VM)
+# Bandwidth is $0.02/GB. Custom metrics are at :9091/metrics (the [metrics]
+# block above scrapes them into fly-metrics.net Grafana).
 
 # Required secrets (set with `fly secrets set KEY=value`, never commit them):
 #   ANTHROPIC_API_KEY   optional — only if you want the `anthropic` provider
@@ -57,5 +83,6 @@ primary_region = "iad"
 #   RCG_MAX_RULES          (default 200)    max rules per check_rules call
 #   RCG_GRAPH_MAX_NODES    (default 5000)   node cap before the graph auto-clears
 #   RCG_RATE_LIMIT_PER_MIN (default 30)     process-wide requests per minute
+#                                           (set to 120 above for this demo)
 # AuraDB Free is $0 and hard-capped at ~50k nodes; the node cap auto-clears the
-# demo graph well before that. 512MB keeps worst-case under $5/mo; 1GB exceeds it.
+# demo graph well before that.

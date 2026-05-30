@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir '.[mcp]'
 ENV RCG_MCP_TRANSPORT=streamable-http \
     PORT=8080
 
-EXPOSE 8080
+# 8080 is the MCP endpoint; 9091 is the Prometheus metrics endpoint that Fly
+# scrapes via the [metrics] block in fly.toml (see docs/hosted-mcp.md).
+EXPOSE 8080 9091
 
 CMD ["rcg-mcp"]

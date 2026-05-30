@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("mcp")
 
-from rcg import mcp_guard, mcp_server  # noqa: E402
+from rcg import mcp_guard, mcp_server, metrics  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -15,6 +15,14 @@ def _reset_rate_limiter() -> Iterator[None]:
     mcp_guard._reset_limiter()
     yield
     mcp_guard._reset_limiter()
+
+
+@pytest.fixture(autouse=True)
+def _reset_metrics() -> Iterator[None]:
+    """Reset the metrics registry so counters are isolated between tests."""
+    metrics.reset()
+    yield
+    metrics.reset()
 
 
 def test_resolve_transport_defaults_to_stdio() -> None:
@@ -100,6 +108,18 @@ def test_check_rules_tool_callable() -> None:
     rules = "- You MUST always run tests.\n"
     result = mcp_server.check_rules(rules)
     assert result["n_rules"] > 0
+
+
+def test_tool_call_increments_metric() -> None:
+    mcp_server.check_rules("- You MUST always run tests.\n")
+    assert 'rcg_tool_calls_total{tool="check_rules"} 1' in metrics.render()
+
+
+def test_demo_oversized_input_increments_rejection_metric() -> None:
+    mcp_server._check_rules_impl(
+        "x" * 60_000, fmt="markdown", env={"RCG_PUBLIC_DEMO": "1"}
+    )
+    assert 'rcg_guard_rejections_total{reason="input_too_large"} 1' in metrics.render()
 
 
 def test_ingest_to_graph_no_neo4j_uri() -> None:

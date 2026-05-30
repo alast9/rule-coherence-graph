@@ -24,11 +24,21 @@ instance for graph persistence.
 
 ## Cost & guardrails
 
-The public demo targets **under $5/month**. A `shared-cpu-1x` VM with 512MB is
-~$3.32/mo at worst-case 24/7, and scale-to-zero (`min_machines_running = 0`)
-makes the real cost far lower. A 1GB VM (~$5.92/mo) would exceed the budget, so
-the VM size is pinned in `fly.toml`. The graph runs on Neo4j AuraDB Free, which
-is $0 but hard-capped at ~50k nodes.
+The bundled `fly.toml` targets a **~$50/month** budget while staying cheap in
+practice. A `shared-cpu-1x` VM with 512MB is ~$3.32/mo running 24/7, so keeping
+one machine warm (`min_machines_running = 1`) costs roughly that. The graph runs
+on Neo4j AuraDB Free, which is $0 but hard-capped at ~50k nodes.
+
+Two tiers are easy to pick between:
+
+| Tier | Posture | Approx. cost |
+| --- | --- | --- |
+| Frugal | `min_machines_running = 0` (scale-to-zero, accept cold starts), default rate limit. | ~$0–5/mo |
+| Demo / $50 (bundled) | Warm `min_machines_running = 1`, higher concurrency (hard 200 / soft 150), `RCG_RATE_LIMIT_PER_MIN = 120`. Burst with `fly scale count 2` (~+$3.32/mo per VM) or `fly scale memory 1024` (1GB, ~$5.92/mo per VM). | ~$3–10/mo steady, up to ~$50 under sustained burst |
+
+The custom metrics below are how you decide when to dial up: watch the
+`rcg_tool_calls_total` rate and Fly's built-in `fly_instance_cpu` /
+`fly_instance_exit_oom`. Bandwidth is billed at $0.02/GB.
 
 These guardrails are **opt-in** via `RCG_PUBLIC_DEMO=1`. When that switch is not
 set (local, stdio, or self-hosted use), the tools are fully unrestricted and
@@ -45,7 +55,8 @@ All limits have safe defaults; overriding them is optional.
 | `RCG_MAX_INPUT_BYTES` | `50000` | Max UTF-8 byte size of `check_rules` input text. |
 | `RCG_MAX_RULES` | `200` | Max rules extracted per `check_rules` call. |
 | `RCG_GRAPH_MAX_NODES` | `5000` | Node count at which the graph auto-clears before ingest. |
-| `RCG_RATE_LIMIT_PER_MIN` | `30` | Requests allowed per trailing 60s window. |
+| `RCG_RATE_LIMIT_PER_MIN` | `30` (120 in the hosted config) | Requests allowed per trailing 60s window. |
+| `RCG_METRICS_PORT` | `9091` | Port for the Prometheus metrics endpoint (HTTP transports only). |
 
 Each limit is parsed defensively: a missing or invalid value falls back to its
 default.
@@ -84,6 +95,39 @@ The file-reading tools (`check_corpus`, `explain_action`, `score_corpus`,
 `ingest_to_graph`) apply only the rate limit in demo mode, since they read
 server-side paths rather than caller-supplied text.
 
+## Custom metrics
+
+The server exposes RCG-specific counters in the Prometheus text exposition
+format on a separate port (default `9091`, path `/metrics`), rendered with the
+Python standard library only — no `prometheus_client` dependency. The metrics
+endpoint starts automatically for the HTTP transports (it is never started for
+stdio, so local/Claude-Code use is untouched). The `[metrics]` block in
+`fly.toml` tells Fly to scrape `:9091/metrics` (~every 15s); the series then
+appear in the managed Grafana at [fly-metrics.net](https://fly-metrics.net)
+alongside Fly's built-ins such as `fly_edge_http_responses_count`,
+`fly_edge_data_out`, `fly_instance_cpu`, and `fly_instance_exit_oom`.
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `rcg_tool_calls_total` | counter | `tool` | One per MCP tool invocation (`check_corpus`, `check_rules`, `explain_action`, `score_corpus`, `ingest_to_graph`). |
+| `rcg_guard_rejections_total` | counter | `reason` | Demo guardrail rejections (`rate_limited`, `input_too_large`, `too_many_rules`). |
+| `rcg_rules_extracted_total` | counter | — | Total rules extracted across check/score/ingest calls. |
+| `rcg_graph_writes_total` | counter | — | Successful `ingest_to_graph` writes. |
+| `rcg_graph_clears_total` | counter | — | Times the demo graph auto-cleared at the node cap. |
+| `rcg_graph_write_failures_total` | counter | — | `ingest_to_graph` attempts that failed. |
+
+All counters are pre-declared, so they render as zero-valued series before the
+first event (nicer when building Grafana panels). Example MetricsQL/PromQL
+queries:
+
+```promql
+# Guard rejection rate, broken out by reason
+sum by (reason) (rate(rcg_guard_rejections_total[5m]))
+
+# Tool mix (which tools are actually being called)
+sum by (tool) (rate(rcg_tool_calls_total[5m]))
+```
+
 ## 1. Create a Neo4j AuraDB instance (optional)
 
 Graph persistence is optional — every tool works without it. To enable it:
@@ -108,8 +152,10 @@ fly deploy
 ```
 
 The bundled `fly.toml` serves over streamable HTTP on port 8080, forces HTTPS,
-pins a 512MB `shared-cpu-1x` VM, and scales to zero between sessions to keep the
-demo cheap. The hosted image installs only the `[mcp]` extra; the `embeddings`
+pins a 512MB `shared-cpu-1x` VM, keeps one machine warm
+(`min_machines_running = 1`) to avoid cold starts, and exposes the custom
+metrics on port 9091 (scraped by Fly via the `[metrics]` block). The hosted
+image installs only the `[mcp]` extra; the `embeddings`
 extra (sentence-transformers/torch) is intentionally omitted to keep the image
 lean and fit the 512MB VM — `check_rules` defaults to the mock provider and a
 hashing embedder, so no heavy ML dependencies are needed for the public demo.

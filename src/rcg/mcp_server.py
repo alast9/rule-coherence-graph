@@ -14,6 +14,7 @@ without an MCP client.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -21,6 +22,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from rcg import metrics
 from rcg.detectors.base import Finding
 from rcg.detectors.precedence import PrecedenceDetector
 from rcg.detectors.syntactic import SyntacticDetector
@@ -109,8 +111,10 @@ def _check_impl(
         # Reads a server-side path, so size abuse is bounded; only rate-limit.
         error = _demo_guard_check(None, cfg)
         if error is not None:
+            metrics.record_rejection(error["error"])
             return error
     rules = _load_rules(path, provider)
+    metrics.record_rules_extracted(len(rules))
     findings: list[Finding] = []
     findings.extend(SyntacticDetector().detect(rules))
     if semantic:
@@ -149,6 +153,7 @@ def _check_rules_impl(
         # Rate limit then input size, checked before any expensive extraction.
         error = _demo_guard_check(len(rules_text.encode("utf-8")), cfg)
         if error is not None:
+            metrics.record_rejection(error["error"])
             return error
     filename = _FORMAT_FILENAMES.get(fmt.lower(), _FORMAT_FILENAMES["markdown"])
     with tempfile.TemporaryDirectory(prefix="rcg-mcp-") as tmp:
@@ -158,7 +163,9 @@ def _check_rules_impl(
         # (this outer call already owns rate-limit/size enforcement).
         result = _check_impl(str(target), provider=provider, semantic=semantic, env={})
     if cfg is not None and result.get("n_rules", 0) > cfg.max_rules:
-        return _too_many_rules_error(int(result["n_rules"]), cfg)
+        error = _too_many_rules_error(int(result["n_rules"]), cfg)
+        metrics.record_rejection(error["error"])
+        return error
     return result
 
 
@@ -189,9 +196,11 @@ def _ingest_to_graph_impl(
         # below once a connection is open.
         error = _demo_guard_check(None, cfg)
         if error is not None:
+            metrics.record_rejection(error["error"])
             return error
 
     rules = _load_rules(path, provider)
+    metrics.record_rules_extracted(len(rules))
     findings: list[Finding] = []
     findings.extend(SyntacticDetector().detect(rules))
     exclude = {frozenset({f.rule_a.id, f.rule_b.id}) for f in findings}
@@ -215,16 +224,20 @@ def _ingest_to_graph_impl(
                 if _should_clear(existing, estimated_new, cfg.graph_max_nodes):
                     loader.clear_all()
                     graph_cleared = True
+                    metrics.record_graph_clear()
             loader.load_rules(rules)
             loader.load_conflicts(findings)
             if cfg is not None:
                 n_nodes = loader.count_nodes()
     except Exception as exc:  # noqa: BLE001 — report, never crash the server.
+        metrics.record_graph_write_failure()
         return {
             "written": False,
             "reason": f"graph write failed: {exc}",
             "uri_scheme": uri_scheme,
         }
+
+    metrics.record_graph_write()
 
     summary: dict[str, Any] = {
         "written": True,
@@ -250,6 +263,7 @@ def _explain_impl(
     if cfg is not None:
         error = _demo_guard_check(None, cfg)
         if error is not None:
+            metrics.record_rejection(error["error"])
             return error
     rules = _load_rules(path, provider)
     result = run_explain(rules, action, _build_provider(provider), scope=scope)
@@ -272,8 +286,10 @@ def _score_impl(
     if cfg is not None:
         error = _demo_guard_check(None, cfg)
         if error is not None:
+            metrics.record_rejection(error["error"])
             return error
     rules = _load_rules(path, provider)
+    metrics.record_rules_extracted(len(rules))
     findings: list[Finding] = []
     findings.extend(SyntacticDetector().detect(rules))
     exclude = {frozenset({f.rule_a.id, f.rule_b.id}) for f in findings}
@@ -290,6 +306,7 @@ def _score_impl(
 @mcp.tool()
 def check_corpus(path: str, provider: str = "mock", semantic: bool = False) -> dict[str, Any]:
     """Discover, extract, and check a rules corpus for conflicts and ambiguities."""
+    metrics.record_tool_call("check_corpus")
     return _check_impl(path, provider=provider, semantic=semantic)
 
 
@@ -298,12 +315,14 @@ def explain_action(
     action: str, path: str, scope: str = "*", provider: str = "mock"
 ) -> dict[str, Any]:
     """Explain which rules fire for a hypothetical action and whether they conflict."""
+    metrics.record_tool_call("explain_action")
     return _explain_impl(action, path, scope=scope, provider=provider)
 
 
 @mcp.tool(name="score_corpus")
 def score_corpus_tool(path: str, provider: str = "mock") -> dict[str, Any]:
     """Return only the coherence score for a rules corpus."""
+    metrics.record_tool_call("score_corpus")
     return _score_impl(path, provider=provider)
 
 
@@ -317,6 +336,7 @@ def check_rules(
     rules text and pick a ``format`` (markdown, cursorrules, cedar, rego, yaml).
     Runs offline with the deterministic mock extractor.
     """
+    metrics.record_tool_call("check_rules")
     return _check_rules_impl(rules_text, fmt=format, semantic=semantic, provider="mock")
 
 
@@ -327,6 +347,7 @@ def ingest_to_graph(path: str, provider: str = "mock") -> dict[str, Any]:
     Returns a summary of what was written. If no graph is configured, returns
     ``{"written": false, "reason": ...}`` rather than raising.
     """
+    metrics.record_tool_call("ingest_to_graph")
     return _ingest_to_graph_impl(path, provider=provider)
 
 
@@ -357,8 +378,23 @@ def _resolve_transport(env: Mapping[str, str]) -> tuple[str, str, int]:
 def main() -> None:
     transport, host, port = _resolve_transport(os.environ)
     if transport == "stdio":
+        # Never start the metrics server for stdio so local/Claude-Code use is
+        # untouched and stdout stays clean for the MCP framing.
         mcp.run()
         return
+    # HTTP transports may serve a Prometheus metrics endpoint on a separate
+    # port (scraped by Fly; see docs/hosted-mcp.md). Start it before mcp.run.
+    enabled, mhost, mport = metrics.resolve_metrics_config(os.environ)
+    if enabled and mport == port:
+        # The metrics endpoint must not collide with the MCP port; skip rather
+        # than crash if they were misconfigured to the same value.
+        print(
+            f"rcg.metrics: metrics port {mport} equals MCP port {port}; "
+            "not starting the metrics server.",
+            file=sys.stderr,
+        )
+    elif enabled:
+        metrics.start_metrics_server(mhost, mport)
     # HTTP transports need a bound host/port; FastMCP reads these from settings.
     mcp.settings.host = host
     mcp.settings.port = port
