@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
 pytest.importorskip("mcp")
 
-from rcg import mcp_server  # noqa: E402
+from rcg import mcp_guard, mcp_server  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> Iterator[None]:
+    """Reset the process-wide limiter so demo-mode tests stay deterministic."""
+    mcp_guard._reset_limiter()
+    yield
+    mcp_guard._reset_limiter()
 
 
 def test_resolve_transport_defaults_to_stdio() -> None:
@@ -97,7 +107,55 @@ def test_ingest_to_graph_no_neo4j_uri() -> None:
     assert result == {"written": False, "reason": "NEO4J_URI not set"}
 
 
+def test_ingest_to_graph_no_neo4j_uri_demo_mode() -> None:
+    # NEO4J_URI is checked before demo mode, so the shape is identical.
+    result = mcp_server._ingest_to_graph_impl(
+        "examples/gemini_incident", env={"RCG_PUBLIC_DEMO": "1"}
+    )
+    assert result == {"written": False, "reason": "NEO4J_URI not set"}
+
+
 def test_ingest_to_graph_tool_callable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NEO4J_URI", raising=False)
     result = mcp_server.ingest_to_graph("examples/gemini_incident")
     assert result["written"] is False
+
+
+def test_check_rules_impl_non_demo_allows_large_input() -> None:
+    # Without the demo switch, oversized input is processed normally.
+    result = mcp_server._check_rules_impl(
+        "- You MUST always run tests.\n" * 5000, fmt="markdown"
+    )
+    assert "error" not in result
+    assert result["n_rules"] >= 1
+
+
+def test_check_rules_impl_demo_input_too_large() -> None:
+    result = mcp_server._check_rules_impl(
+        "x" * 60_000, fmt="markdown", env={"RCG_PUBLIC_DEMO": "1"}
+    )
+    assert result["error"] == "input_too_large"
+    assert result["limit"] == 50_000
+
+
+def test_check_rules_impl_demo_too_many_rules() -> None:
+    text = (
+        "- You MUST deploy to production after tests pass.\n"
+        "- You MUST NOT deploy to production without human approval.\n"
+    )
+    result = mcp_server._check_rules_impl(
+        text,
+        fmt="markdown",
+        env={"RCG_PUBLIC_DEMO": "1", "RCG_MAX_RULES": "1"},
+    )
+    assert result["error"] == "too_many_rules"
+    assert result["limit"] == 1
+
+
+def test_check_rules_impl_demo_rate_limited() -> None:
+    env = {"RCG_PUBLIC_DEMO": "1", "RCG_RATE_LIMIT_PER_MIN": "1"}
+    first = mcp_server._check_rules_impl("- You MUST run tests.\n", fmt="markdown", env=env)
+    assert "error" not in first
+    second = mcp_server._check_rules_impl("- You MUST run tests.\n", fmt="markdown", env=env)
+    assert second["error"] == "rate_limited"
+    assert second["limit"] == 1

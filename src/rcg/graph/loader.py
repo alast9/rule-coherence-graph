@@ -73,3 +73,12 @@ class GraphLoader:
                     severity=c.severity,
                     reason=c.reason,
                 )
+
+    def count_nodes(self) -> int:
+        with self._driver.session() as session:
+            record = session.run(queries.COUNT_NODES).single()
+            return int(record["n"]) if record is not None else 0
+
+    def clear_all(self) -> None:
+        with self._driver.session() as session:
+            session.run(queries.CLEAR_ALL)

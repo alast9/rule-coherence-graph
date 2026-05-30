@@ -26,10 +26,26 @@ from rcg.detectors.precedence import PrecedenceDetector
 from rcg.detectors.syntactic import SyntacticDetector
 from rcg.explain import explain as run_explain
 from rcg.extractors.extract import extract_all
+from rcg.mcp_guard import (
+    DemoConfig,
+    _demo_config,
+    _demo_guard_check,
+    _should_clear,
+    _too_many_rules_error,
+)
 from rcg.parsers.discovery import discover
 from rcg.providers.llm import LLMProvider
 from rcg.schema import Rule
 from rcg.scoring import score_corpus
+
+# Re-exported here so tests and tooling can reach the guardrail helpers via the
+# server module; the implementations live in rcg.mcp_guard.
+__all__ = [
+    "DemoConfig",
+    "_demo_config",
+    "_demo_guard_check",
+    "_should_clear",
+]
 
 mcp = FastMCP("rcg")
 
@@ -81,7 +97,19 @@ def _finding_dict(finding: Finding) -> dict[str, Any]:
     }
 
 
-def _check_impl(path: str, provider: str = "mock", semantic: bool = False) -> dict[str, Any]:
+def _check_impl(
+    path: str,
+    provider: str = "mock",
+    semantic: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    env = os.environ if env is None else env
+    cfg = _demo_config(env)
+    if cfg is not None:
+        # Reads a server-side path, so size abuse is bounded; only rate-limit.
+        error = _demo_guard_check(None, cfg)
+        if error is not None:
+            return error
     rules = _load_rules(path, provider)
     findings: list[Finding] = []
     findings.extend(SyntacticDetector().detect(rules))
@@ -104,18 +132,34 @@ def _check_impl(path: str, provider: str = "mock", semantic: bool = False) -> di
 
 
 def _check_rules_impl(
-    rules_text: str, fmt: str = "markdown", semantic: bool = False, provider: str = "mock"
+    rules_text: str,
+    fmt: str = "markdown",
+    semantic: bool = False,
+    provider: str = "mock",
+    env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Run the check pipeline over a pasted rules string (no filesystem access).
 
     The text is written to a temp file named for ``fmt`` so the normal discovery
     path picks the right parser, then the temp directory is removed.
     """
+    env = os.environ if env is None else env
+    cfg = _demo_config(env)
+    if cfg is not None:
+        # Rate limit then input size, checked before any expensive extraction.
+        error = _demo_guard_check(len(rules_text.encode("utf-8")), cfg)
+        if error is not None:
+            return error
     filename = _FORMAT_FILENAMES.get(fmt.lower(), _FORMAT_FILENAMES["markdown"])
     with tempfile.TemporaryDirectory(prefix="rcg-mcp-") as tmp:
         target = Path(tmp) / filename
         target.write_text(rules_text, encoding="utf-8")
-        return _check_impl(str(target), provider=provider, semantic=semantic)
+        # Pass an empty env to _check_impl so it does not re-run the guard
+        # (this outer call already owns rate-limit/size enforcement).
+        result = _check_impl(str(target), provider=provider, semantic=semantic, env={})
+    if cfg is not None and result.get("n_rules", 0) > cfg.max_rules:
+        return _too_many_rules_error(int(result["n_rules"]), cfg)
+    return result
 
 
 def _ingest_to_graph_impl(
@@ -127,6 +171,9 @@ def _ingest_to_graph_impl(
     the return value so the server stays up for the next caller.
     """
     env = os.environ if env is None else env
+    # Check NEO4J_URI first so the no-database behavior and return shape are
+    # identical in demo and non-demo mode (existing tests rely on this exact
+    # ``{"written": False, "reason": "NEO4J_URI not set"}`` return).
     uri = env.get("NEO4J_URI")
     if not uri:
         return {"written": False, "reason": "NEO4J_URI not set"}
@@ -135,6 +182,14 @@ def _ingest_to_graph_impl(
     password = env.get("NEO4J_PASSWORD")
     if not password:
         return {"written": False, "reason": "NEO4J_PASSWORD not set"}
+
+    cfg = _demo_config(env)
+    if cfg is not None:
+        # Reads a server-side path; rate-limit here. The node cap is enforced
+        # below once a connection is open.
+        error = _demo_guard_check(None, cfg)
+        if error is not None:
+            return error
 
     rules = _load_rules(path, provider)
     findings: list[Finding] = []
@@ -147,9 +202,23 @@ def _ingest_to_graph_impl(
     try:
         from rcg.graph.loader import GraphLoader
 
+        graph_cleared = False
+        n_nodes = 0
         with GraphLoader.connect(uri, user, password) as loader:
+            if cfg is not None:
+                # Auto-clear the small demo graph before it would exceed the
+                # node cap, keeping the free AuraDB graph from filling up.
+                # Estimate new nodes as rules + their distinct RuleFile nodes.
+                n_files = len({rule.source.file for rule in rules})
+                estimated_new = len(rules) + n_files
+                existing = loader.count_nodes()
+                if _should_clear(existing, estimated_new, cfg.graph_max_nodes):
+                    loader.clear_all()
+                    graph_cleared = True
             loader.load_rules(rules)
             loader.load_conflicts(findings)
+            if cfg is not None:
+                n_nodes = loader.count_nodes()
     except Exception as exc:  # noqa: BLE001 — report, never crash the server.
         return {
             "written": False,
@@ -157,17 +226,31 @@ def _ingest_to_graph_impl(
             "uri_scheme": uri_scheme,
         }
 
-    return {
+    summary: dict[str, Any] = {
         "written": True,
         "n_rules": len(rules),
         "n_conflicts": len(findings),
         "uri_scheme": uri_scheme,
     }
+    if cfg is not None:
+        summary["graph_cleared"] = graph_cleared
+        summary["n_nodes"] = n_nodes
+    return summary
 
 
 def _explain_impl(
-    action: str, path: str, scope: str = "*", provider: str = "mock"
+    action: str,
+    path: str,
+    scope: str = "*",
+    provider: str = "mock",
+    env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
+    env = os.environ if env is None else env
+    cfg = _demo_config(env)
+    if cfg is not None:
+        error = _demo_guard_check(None, cfg)
+        if error is not None:
+            return error
     rules = _load_rules(path, provider)
     result = run_explain(rules, action, _build_provider(provider), scope=scope)
     return {
@@ -181,7 +264,15 @@ def _explain_impl(
     }
 
 
-def _score_impl(path: str, provider: str = "mock") -> dict[str, Any]:
+def _score_impl(
+    path: str, provider: str = "mock", env: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    env = os.environ if env is None else env
+    cfg = _demo_config(env)
+    if cfg is not None:
+        error = _demo_guard_check(None, cfg)
+        if error is not None:
+            return error
     rules = _load_rules(path, provider)
     findings: list[Finding] = []
     findings.extend(SyntacticDetector().detect(rules))

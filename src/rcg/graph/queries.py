@@ -32,3 +32,9 @@ SET c.severity = $severity,
 
 COUNT_RULES = "MATCH (r:Rule) RETURN count(r) AS n"
 COUNT_CONFLICTS = "MATCH ()-[c:CONFLICTS_WITH]->() RETURN count(c) AS n"
+
+# Count every node in the graph (used by the public-demo node cap).
+COUNT_NODES = "MATCH (n) RETURN count(n) AS n"
+
+# Delete every node and relationship (used to auto-clear the demo graph at cap).
+CLEAR_ALL = "MATCH (n) DETACH DELETE n"

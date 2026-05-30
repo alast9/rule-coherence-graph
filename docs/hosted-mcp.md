@@ -22,6 +22,68 @@ instance for graph persistence.
       and only expose the app inside your organisation.
     - Run your own instance instead of sharing one.
 
+## Cost & guardrails
+
+The public demo targets **under $5/month**. A `shared-cpu-1x` VM with 512MB is
+~$3.32/mo at worst-case 24/7, and scale-to-zero (`min_machines_running = 0`)
+makes the real cost far lower. A 1GB VM (~$5.92/mo) would exceed the budget, so
+the VM size is pinned in `fly.toml`. The graph runs on Neo4j AuraDB Free, which
+is $0 but hard-capped at ~50k nodes.
+
+These guardrails are **opt-in** via `RCG_PUBLIC_DEMO=1`. When that switch is not
+set (local, stdio, or self-hosted use), the tools are fully unrestricted and
+behave exactly as before. `fly.toml` sets `RCG_PUBLIC_DEMO=1` for the hosted
+demo.
+
+### Tunable limits
+
+All limits have safe defaults; overriding them is optional.
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `RCG_PUBLIC_DEMO` | (unset) | Master switch. Truthy (`1`/`true`/`yes`, case-insensitive) enables all guardrails below. |
+| `RCG_MAX_INPUT_BYTES` | `50000` | Max UTF-8 byte size of `check_rules` input text. |
+| `RCG_MAX_RULES` | `200` | Max rules extracted per `check_rules` call. |
+| `RCG_GRAPH_MAX_NODES` | `5000` | Node count at which the graph auto-clears before ingest. |
+| `RCG_RATE_LIMIT_PER_MIN` | `30` | Requests allowed per trailing 60s window. |
+
+Each limit is parsed defensively: a missing or invalid value falls back to its
+default.
+
+### Graph auto-clear at cap
+
+Before each `ingest_to_graph` write in demo mode, the server counts existing
+nodes and estimates the new ones (rules + their distinct parent file nodes). If
+`existing + estimated_new` would exceed `RCG_GRAPH_MAX_NODES`, the whole demo
+graph is wiped (`DETACH DELETE`) before the new ingest, and the response
+includes `"graph_cleared": true`. This keeps the free AuraDB graph from filling
+its ~50k node cap and getting stuck. The return summary also includes
+`"n_nodes"` (the post-write node count) in demo mode.
+
+### Rate limit is process-global
+
+There is no reliable per-client identity over the MCP transport, so the rate
+limiter is **process-wide**: it caps the demo's *total* throughput, not
+per-user throughput. The concurrency limits in `fly.toml`
+(`[http_service.concurrency]`) provide a complementary cap on simultaneous
+requests.
+
+### Error shapes
+
+In demo mode the tools never raise across the MCP boundary; instead they return
+a structured error dict of the form
+`{"error": "<machine_code>", "message": "<human text>", "limit": <int>}`:
+
+| `error` code | When |
+| --- | --- |
+| `rate_limited` | The process-wide per-minute request limit was exceeded. |
+| `input_too_large` | `check_rules` input exceeded `RCG_MAX_INPUT_BYTES`. |
+| `too_many_rules` | Extracted rule count exceeded `RCG_MAX_RULES`. |
+
+The file-reading tools (`check_corpus`, `explain_action`, `score_corpus`,
+`ingest_to_graph`) apply only the rate limit in demo mode, since they read
+server-side paths rather than caller-supplied text.
+
 ## 1. Create a Neo4j AuraDB instance (optional)
 
 Graph persistence is optional — every tool works without it. To enable it:
@@ -46,7 +108,11 @@ fly deploy
 ```
 
 The bundled `fly.toml` serves over streamable HTTP on port 8080, forces HTTPS,
-and scales to zero between sessions to keep the demo cheap.
+pins a 512MB `shared-cpu-1x` VM, and scales to zero between sessions to keep the
+demo cheap. The hosted image installs only the `[mcp]` extra; the `embeddings`
+extra (sentence-transformers/torch) is intentionally omitted to keep the image
+lean and fit the 512MB VM — `check_rules` defaults to the mock provider and a
+hashing embedder, so no heavy ML dependencies are needed for the public demo.
 
 ## 3. Set secrets
 
