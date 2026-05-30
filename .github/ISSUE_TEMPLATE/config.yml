@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & ideas (Discussions)
+    url: https://github.com/alast9/rule-coherence-graph/discussions
+    about: For open-ended questions, usage help, and ideas — use Discussions rather than an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/alast9/rule-coherence-graph/security/advisories/new
+    about: Please report vulnerabilities privately. See SECURITY.md for the policy.
+  - name: Documentation
+    url: https://alast9.github.io/rule-coherence-graph/
+    about: Check the docs first — your question may already be answered.

@@ -55,3 +55,10 @@ contradictions the agent silently resolved:
 Open source (Apache-2.0) · `pipx install rule-coherence-graph` ·
 [GitHub](https://github.com/alast9/rule-coherence-graph) ·
 [PyPI](https://pypi.org/project/rule-coherence-graph/)
+
+## Feedback & support
+
+- **Bug or false positive?** [Open a bug report](https://github.com/alast9/rule-coherence-graph/issues/new?template=bug_report.yml).
+- **Idea or new parser?** [Open a feature request](https://github.com/alast9/rule-coherence-graph/issues/new?template=feature_request.yml).
+- **Question or usage help?** Use [GitHub Discussions](https://github.com/alast9/rule-coherence-graph/discussions).
+- **Security vulnerability?** Report it privately — see the [security policy](https://github.com/alast9/rule-coherence-graph/security/policy). Please don't open a public issue.

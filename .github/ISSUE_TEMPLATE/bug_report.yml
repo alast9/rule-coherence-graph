@@ -1,0 +1,76 @@
+name: Bug report
+description: Report something that doesn't work as expected (a crash, wrong finding, or unexpected output).
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. A small reproducer and the exact
+        output make this much faster to fix. Please keep everything in English.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what did you get instead?
+      placeholder: Running `rcg check ./rules` reported a conflict between two rules that don't actually conflict…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact command(s) you ran. If you can, include a minimal rules snippet that triggers it.
+      placeholder: |
+        1. Create CLAUDE.md with:
+           - The agent MUST ...
+           - The agent MUST NOT ...
+        2. Run: rcg check . --no-graph
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The full command output (and the traceback, if it crashed). This is auto-formatted as code.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: RCG version
+      description: Output of `rcg --version` (or the PyPI version / git commit you installed).
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Extractor provider
+      description: Which extractor were you using?
+      options:
+        - mock (offline, default without an API key)
+        - anthropic
+        - auto
+        - not sure
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS and Python version (`python --version`).
+      placeholder: "macOS 15, Python 3.11.8"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: This is a bug, not a security vulnerability (those go through the policy in SECURITY.md).
+          required: true

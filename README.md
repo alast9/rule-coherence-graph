@@ -393,3 +393,12 @@ Tools exposed:
 - `score_corpus(path, provider="mock")` — just the coherence score.
 - `ingest_to_graph(path, provider="mock")` — check a corpus and persist it to Neo4j when
   `NEO4J_URI` is configured.
+
+---
+
+## Feedback & support
+
+- **Bug or false positive?** Open a [bug report](https://github.com/alast9/rule-coherence-graph/issues/new?template=bug_report.yml).
+- **Idea or new parser?** Open a [feature request](https://github.com/alast9/rule-coherence-graph/issues/new?template=feature_request.yml).
+- **Question or usage help?** Use [Discussions](https://github.com/alast9/rule-coherence-graph/discussions).
+- **Security vulnerability?** Please report it privately — see [SECURITY.md](SECURITY.md). Don't open a public issue.
