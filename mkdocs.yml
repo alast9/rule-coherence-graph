@@ -42,6 +42,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - How it works (concepts): concepts.md
   - Coding assistants (MCP): mcp-clients.md
   - Benchmark: benchmark.md
   - Design & schema: SPEC.md
