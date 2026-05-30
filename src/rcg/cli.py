@@ -12,7 +12,13 @@ import typer
 from rcg.baseline import load_baseline, split_baselined, write_baseline
 from rcg.detectors.base import Finding
 from rcg.detectors.precedence import PrecedenceDetector
-from rcg.detectors.semantic import AnthropicJudge, MockJudge, SemanticDetector, SemanticJudge
+from rcg.detectors.semantic import (
+    AnthropicJudge,
+    MockJudge,
+    OpenAICompatibleJudge,
+    SemanticDetector,
+    SemanticJudge,
+)
 from rcg.detectors.syntactic import SyntacticDetector
 from rcg.extractors.anthropic_provider import AnthropicProvider
 from rcg.extractors.extract import extract_all
@@ -33,10 +39,38 @@ PROVIDER_OPT = Annotated[
         envvar="RCG_PROVIDER",
         help=(
             "Extraction provider: 'auto' (anthropic if ANTHROPIC_API_KEY is set, "
-            "else the offline mock), 'anthropic' (real API), or 'mock' (offline demo)."
+            "else the offline mock), 'anthropic' (real API), 'deepseek', 'qwen', "
+            "'openai' (any OpenAI-compatible endpoint via RCG_LLM_BASE_URL), or "
+            "'mock' (offline demo)."
         ),
     ),
 ]
+
+# OpenAI-compatible presets: base_url + default model + the preset-specific key
+# env. The model is always overridable via RCG_LLM_MODEL; keys fall back to the
+# generic RCG_LLM_API_KEY (and, for the generic 'openai' provider, OPENAI_API_KEY).
+_OPENAI_PRESETS: dict[str, dict[str, str | None]] = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "key_env": "DEEPSEEK_API_KEY",
+    },
+    "qwen": {
+        "base_url": "https://dashscope.aliyun.com/compatible-mode/v1",
+        "model": "qwen-max",
+        "key_env": "DASHSCOPE_API_KEY",
+    },
+    "openai": {
+        "base_url": None,  # SDK default (or RCG_LLM_BASE_URL); points at api.openai.com
+        "model": "gpt-4o-mini",
+        "key_env": "OPENAI_API_KEY",
+    },
+}
+
+
+def _resolve_openai_key(preset_key_env: str) -> str | None:
+    """Resolve an OpenAI-compatible key: preset env, then generic RCG_LLM_API_KEY."""
+    return os.environ.get(preset_key_env) or os.environ.get("RCG_LLM_API_KEY")
 
 NEO4J_URI = Annotated[
     str, typer.Option(envvar="RCG_NEO4J_URI", help="Bolt URI. Ignored with --no-graph.")
@@ -66,15 +100,41 @@ def _build_provider(name: str) -> LLMProvider:
             )
             raise typer.Exit(code=2)
         return AnthropicProvider()
+    if name in _OPENAI_PRESETS:
+        return _build_openai_provider(name)
     typer.echo(f"error: unknown provider {name!r}", err=True)
     raise typer.Exit(code=2)
 
 
+def _build_openai_provider(name: str) -> LLMProvider:
+    """Build an OpenAI-compatible provider from a named preset."""
+    from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+    preset = _OPENAI_PRESETS[name]
+    key_env = str(preset["key_env"])
+    api_key = _resolve_openai_key(key_env)
+    if not api_key:
+        typer.echo(
+            f"error: {key_env} is not set (also tried RCG_LLM_API_KEY). "
+            "Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    base_url = os.environ.get("RCG_LLM_BASE_URL") or preset["base_url"]
+    model = os.environ.get("RCG_LLM_MODEL") or str(preset["model"])
+    return OpenAICompatibleProvider(model_id=model, base_url=base_url, api_key=api_key)
+
+
 def _build_judge(provider_name: str) -> SemanticJudge:
-    if provider_name == "anthropic" and os.environ.get("ANTHROPIC_API_KEY"):
+    if provider_name in {"anthropic", "auto"} and os.environ.get("ANTHROPIC_API_KEY"):
         return AnthropicJudge()
-    if provider_name == "auto" and os.environ.get("ANTHROPIC_API_KEY"):
-        return AnthropicJudge()
+    if provider_name in _OPENAI_PRESETS:
+        preset = _OPENAI_PRESETS[provider_name]
+        api_key = _resolve_openai_key(str(preset["key_env"]))
+        if api_key:
+            base_url = os.environ.get("RCG_LLM_BASE_URL") or preset["base_url"]
+            model = os.environ.get("RCG_LLM_MODEL") or str(preset["model"])
+            return OpenAICompatibleJudge(model_id=model, base_url=base_url, api_key=api_key)
     return MockJudge()
 
 
@@ -90,6 +150,20 @@ def _build_benchmark_judge(kind: str) -> SemanticJudge:
             )
             raise typer.Exit(code=2)
         return AnthropicJudge()
+    if kind in _OPENAI_PRESETS:
+        preset = _OPENAI_PRESETS[kind]
+        key_env = str(preset["key_env"])
+        api_key = _resolve_openai_key(key_env)
+        if not api_key:
+            typer.echo(
+                f"error: {key_env} is not set (also tried RCG_LLM_API_KEY). "
+                "Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        base_url = os.environ.get("RCG_LLM_BASE_URL") or preset["base_url"]
+        model = os.environ.get("RCG_LLM_MODEL") or str(preset["model"])
+        return OpenAICompatibleJudge(model_id=model, base_url=base_url, api_key=api_key)
     raise typer.BadParameter(f"unknown judge: {kind!r}")
 
 
@@ -334,7 +408,9 @@ def benchmark(
         None, help="JSONL labeled dataset (defaults to benchmarks/dataset.jsonl)."
     ),
     embedder: str = typer.Option("hashing", "--embedder", help="hashing|sentence-transformers"),
-    judge: str = typer.Option("mock", "--judge", help="mock|anthropic"),
+    judge: str = typer.Option(
+        "mock", "--judge", help="mock|anthropic|deepseek|qwen|openai"
+    ),
     semantic: bool = typer.Option(
         True, "--semantic/--no-semantic", help="Run the semantic pass in the benchmark."
     ),

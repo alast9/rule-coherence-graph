@@ -65,6 +65,10 @@ pipx install rule-coherence-graph        # or: uv tool install rule-coherence-gr
 rcg check ./path/to/your/agent/rules     # point it at your own .cursorrules / CLAUDE.md / .agent/rules
 ```
 
+Optional extras: `[mcp]` (MCP server), `[embeddings]` (sentence-transformers),
+`[openai]` (DeepSeek / Qwen / OpenAI providers), e.g.
+`pip install 'rule-coherence-graph[openai]'`.
+
 Or run it once without installing:
 
 ```bash
@@ -75,6 +79,21 @@ uvx --from rule-coherence-graph rcg check examples/gemini_incident
 unset, so you get a result with zero setup. Set the key (and `--provider
 anthropic`) for LLM-quality extraction, and `docker compose up -d neo4j` to also
 persist the graph.
+
+RCG also supports any OpenAI-compatible endpoint via a single provider class —
+DeepSeek, Qwen, OpenAI, and local servers (vLLM/Ollama):
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+rcg check ./rules --provider deepseek            # or --provider qwen / openai
+
+# A local OpenAI-compatible server
+export RCG_LLM_BASE_URL=http://localhost:11434/v1
+export RCG_LLM_API_KEY=ollama
+rcg check ./rules --provider openai
+```
+
+Full provider matrix and env vars: [docs/providers.md](docs/providers.md).
 
 ---
 
@@ -119,8 +138,13 @@ conflict was invisible until it caused damage.
   Cursor `.cursorrules` and `.mdc` files, rule-related YAML/JSON files, and
   policy-as-code: OPA Rego (`.rego`) and AWS Cedar (`.cedar`).
 - **Extractor** turns each raw rule into a canonical `Rule` via a provider
-  (`anthropic`, `mock`, or `auto`). Results are cached by content hash + model +
-  prompt version, so extraction is deterministic and re-runs are free.
+  (`anthropic`, `mock`, `auto`, or any OpenAI-compatible endpoint —
+  `deepseek` / `qwen` / `openai`). Adding a provider is a single new class
+  implementing the `LLMProvider` protocol; `src/rcg/extractors/openai_provider.py`
+  is one endpoint-configurable class that drives DeepSeek, Qwen, OpenAI, and local
+  vLLM/Ollama (see [docs/providers.md](docs/providers.md)). Results are cached by
+  content hash + model + prompt version, so extraction is deterministic and
+  re-runs are free.
 - **Detector** finds conflicts over the in-memory `Rule` list (pure Python).
 - **Graph loader** persists rules and `CONFLICTS_WITH` edges to Neo4j idempotently.
 - **Report** renders conflicts as GitHub-flavored markdown, preserving original

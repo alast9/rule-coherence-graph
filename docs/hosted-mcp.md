@@ -43,6 +43,7 @@ over stdio with no guardrails and no graph, exactly as it always has.
 | `NEO4J_URI` | (unset) | Bolt **Connection URI** `neo4j+s://<id>.databases.neo4j.io` — **not** the Query API URL. Optional; enables `ingest_to_graph`. |
 | `NEO4J_USERNAME` | `neo4j` | AuraDB username. **On AuraDB this is the instance id (e.g. `ac3f157b`), not literally `neo4j`** — see the callout below. (`NEO4J_USER` is also accepted.) |
 | `NEO4J_PASSWORD` | (unset) | AuraDB password (shown only once at instance creation). |
+| `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `RCG_LLM_*` | (unset) | LLM provider keys/config. The hosted demo defaults to the offline `mock` extractor; set these only if a tool is called with `provider="deepseek"`/`qwen`/`openai`/`anthropic`. See [LLM providers](providers.md). |
 
 On the hosted demo, the non-secret variables — `RCG_MCP_TRANSPORT`, `PORT`,
 `RCG_PUBLIC_DEMO`, `RCG_METRICS_PORT`, `RCG_RATE_LIMIT_PER_MIN`, and

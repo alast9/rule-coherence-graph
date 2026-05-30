@@ -64,11 +64,41 @@ _FORMAT_FILENAMES: dict[str, str] = {
 }
 
 
+# OpenAI-compatible presets, kept in sync with rcg.cli._OPENAI_PRESETS so the MCP
+# server accepts the same provider names (base_url, default model, preset key env).
+_OPENAI_PRESETS: dict[str, dict[str, str | None]] = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "key_env": "DEEPSEEK_API_KEY",
+    },
+    "qwen": {
+        "base_url": "https://dashscope.aliyun.com/compatible-mode/v1",
+        "model": "qwen-max",
+        "key_env": "DASHSCOPE_API_KEY",
+    },
+    "openai": {
+        "base_url": None,
+        "model": "gpt-4o-mini",
+        "key_env": "OPENAI_API_KEY",
+    },
+}
+
+
 def _build_provider(name: str) -> LLMProvider:
-    if name.lower() == "anthropic":
+    key = name.lower()
+    if key == "anthropic":
         from rcg.extractors.anthropic_provider import AnthropicProvider
 
         return AnthropicProvider()
+    if key in _OPENAI_PRESETS:
+        from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+        preset = _OPENAI_PRESETS[key]
+        api_key = os.environ.get(str(preset["key_env"])) or os.environ.get("RCG_LLM_API_KEY")
+        base_url = os.environ.get("RCG_LLM_BASE_URL") or preset["base_url"]
+        model = os.environ.get("RCG_LLM_MODEL") or str(preset["model"])
+        return OpenAICompatibleProvider(model_id=model, base_url=base_url, api_key=api_key)
     from rcg.extractors.mock_provider import MockProvider
 
     return MockProvider()

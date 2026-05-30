@@ -182,6 +182,70 @@ class AnthropicJudge:
         return JudgeVerdict(is_conflict=False, reasoning="Judge returned no verdict.")
 
 
+class OpenAICompatibleJudge:
+    """LLM-backed judge for any OpenAI-compatible chat-completions endpoint.
+
+    Mirrors :class:`AnthropicJudge` but speaks the OpenAI tools API, so it works
+    against OpenAI, DeepSeek, Qwen (DashScope or local). It reuses the same judge
+    prompt and tool schema (adapted to OpenAI's function envelope).
+    """
+
+    prompt_version = "judge-openai-v1"
+
+    def __init__(
+        self,
+        model_id: str,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        client: Any = None,
+    ) -> None:
+        self.model_id = model_id
+        self._base_url = base_url
+        self._api_key = (
+            api_key
+            or os.environ.get("RCG_LLM_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
+        self._client: Any = client
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            from openai import OpenAI
+
+            self._client = OpenAI(base_url=self._base_url, api_key=self._api_key)
+        return self._client
+
+    @staticmethod
+    def _tool() -> dict[str, Any]:
+        schema = AnthropicJudge._tool_schema()
+        return {
+            "type": "function",
+            "function": {
+                "name": schema["name"],
+                "description": schema["description"],
+                "parameters": schema["input_schema"],
+            },
+        }
+
+    def judge(self, a: Rule, b: Rule) -> JudgeVerdict:
+        client = self._get_client()
+        response = client.chat.completions.create(
+            model=self.model_id,
+            messages=[
+                {"role": "system", "content": _JUDGE_SYSTEM},
+                {"role": "user", "content": AnthropicJudge._prompt(a, b)},
+            ],
+            tools=[self._tool()],
+            tool_choice={"type": "function", "function": {"name": _JUDGE_TOOL_NAME}},
+        )
+        tool_calls = getattr(response.choices[0].message, "tool_calls", None)
+        if tool_calls:
+            arguments = tool_calls[0].function.arguments
+            payload = arguments if isinstance(arguments, dict) else json.loads(arguments)
+            return JudgeVerdict.model_validate(payload)
+        return JudgeVerdict(is_conflict=False, reasoning="Judge returned no verdict.")
+
+
 @dataclass(frozen=True)
 class SemanticConflict:
     """A conflict surfaced by embedding recall plus a judge."""

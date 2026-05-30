@@ -49,6 +49,11 @@ dev = [
 embeddings = [
     "sentence-transformers>=3.0",
 ]
+# OpenAI-compatible providers (DeepSeek, Qwen/DashScope, OpenAI, local vLLM/Ollama).
+# Imported lazily so the core install never requires it; see openai_provider.py.
+openai = [
+    "openai>=1.0",
+]
 
 [project.scripts]
 rcg = "rcg.cli:app"
@@ -92,6 +97,12 @@ ignore_missing_imports = true
 # is installed (no brittle inline `type: ignore` that flips to "unused").
 [[tool.mypy.overrides]]
 module = "sentence_transformers.*"
+ignore_missing_imports = true
+
+# openai lives only in the optional `openai` extra; ignore it unconditionally so
+# mypy is green whether or not the extra is installed.
+[[tool.mypy.overrides]]
+module = "openai.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
