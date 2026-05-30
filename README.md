@@ -4,7 +4,8 @@
 
 **Detect conflicts in the rule corpora that govern AI coding agents — before the agent does.**
 
-📖 **Docs:** https://alast9.github.io/rule-coherence-graph/
+📖 **Docs:** https://alast9.github.io/rule-coherence-graph/ ·
+🎓 **New here?** [How it works (concepts guide)](https://alast9.github.io/rule-coherence-graph/concepts/) — embeddings, extraction, conflict detection, and scaling, with worked examples.
 
 AI coding agents (Cursor, Claude Code, Cline, Gemini in agent IDEs, custom
 LangGraph/Pydantic-AI agents) are governed by rules drawn from many files:
