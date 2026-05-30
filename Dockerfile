@@ -13,6 +13,11 @@ COPY src ./src
 # provider + hashing embedder, so no heavy ML deps are required.
 RUN pip install --no-cache-dir '.[mcp]'
 
+# Bundle the example corpora so path-based tools (check_corpus, ingest_to_graph)
+# have something to analyse on the hosted demo, e.g. ingest_to_graph with
+# path="examples/gemini_incident". check_rules works on pasted text without these.
+COPY examples ./examples
+
 # Serve over streamable HTTP by default; the stdio default is for local clients.
 ENV RCG_MCP_TRANSPORT=streamable-http \
     PORT=8080
