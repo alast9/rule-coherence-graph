@@ -82,7 +82,28 @@ _OPENAI_PRESETS: dict[str, dict[str, str | None]] = {
         "model": "gpt-4o-mini",
         "key_env": "OPENAI_API_KEY",
     },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "anthropic/claude-sonnet-4",
+        "key_env": "OPENROUTER_API_KEY",
+    },
+    "google": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "model": "gemini-2.5-flash",
+        "key_env": "GEMINI_API_KEY",
+    },
 }
+
+
+def _resolve_openai_key(preset_key_env: str) -> str | None:
+    """Resolve an OpenAI-compatible key, mirroring rcg.cli (google → GOOGLE_API_KEY)."""
+    if preset_key_env == "GEMINI_API_KEY":
+        return (
+            os.environ.get("GEMINI_API_KEY")
+            or os.environ.get("GOOGLE_API_KEY")
+            or os.environ.get("RCG_LLM_API_KEY")
+        )
+    return os.environ.get(preset_key_env) or os.environ.get("RCG_LLM_API_KEY")
 
 
 # Bedrock is special-cased (kept out of _OPENAI_PRESETS) because its base_url is
@@ -105,6 +126,34 @@ def _bedrock_base_url() -> str:
     return f"https://bedrock-runtime.{region}.amazonaws.com/openai/v1"
 
 
+# Azure / Vertex are special-cased like bedrock (computed base_url). Mirrors rcg.cli.
+def _azure_base_url() -> str | None:
+    """Compute the Azure OpenAI v1 base URL, or None if the endpoint is unset."""
+    override = os.environ.get("RCG_LLM_BASE_URL")
+    if override:
+        return override
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    if not endpoint:
+        return None
+    return f"{endpoint.rstrip('/')}/openai/v1"
+
+
+def _vertex_base_url(project: str) -> str:
+    """Compute the Vertex OpenAI-compatible base URL (RCG_LLM_BASE_URL wins)."""
+    override = os.environ.get("RCG_LLM_BASE_URL")
+    if override:
+        return override
+    region = (
+        os.environ.get("RCG_LLM_REGION")
+        or os.environ.get("VERTEX_LOCATION")
+        or "us-central1"
+    )
+    return (
+        f"https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+        f"/locations/{region}/endpoints/openapi"
+    )
+
+
 def _build_provider(name: str) -> LLMProvider:
     key = name.lower()
     if key == "anthropic":
@@ -121,11 +170,30 @@ def _build_provider(name: str) -> LLMProvider:
         return OpenAICompatibleProvider(
             model_id=model, base_url=_bedrock_base_url(), api_key=api_key
         )
+    if key == "azure":
+        from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+        az_key = os.environ.get("AZURE_OPENAI_API_KEY") or os.environ.get("RCG_LLM_API_KEY")
+        az_model = os.environ.get("RCG_LLM_MODEL")  # deployment name
+        return OpenAICompatibleProvider(
+            model_id=str(az_model), base_url=_azure_base_url(), api_key=az_key
+        )
+    if key == "vertex":
+        from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+        vx_project = os.environ.get("VERTEX_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        vx_token = (
+            os.environ.get("GOOGLE_VERTEX_ACCESS_TOKEN") or os.environ.get("RCG_LLM_API_KEY")
+        )
+        vx_model = os.environ.get("RCG_LLM_MODEL")
+        return OpenAICompatibleProvider(
+            model_id=str(vx_model), base_url=_vertex_base_url(str(vx_project)), api_key=vx_token
+        )
     if key in _OPENAI_PRESETS:
         from rcg.extractors.openai_provider import OpenAICompatibleProvider
 
         preset = _OPENAI_PRESETS[key]
-        api_key = os.environ.get(str(preset["key_env"])) or os.environ.get("RCG_LLM_API_KEY")
+        api_key = _resolve_openai_key(str(preset["key_env"]))
         base_url = os.environ.get("RCG_LLM_BASE_URL") or preset["base_url"]
         model = os.environ.get("RCG_LLM_MODEL") or str(preset["model"])
         return OpenAICompatibleProvider(model_id=model, base_url=base_url, api_key=api_key)

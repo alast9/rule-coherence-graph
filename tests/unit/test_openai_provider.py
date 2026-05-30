@@ -341,3 +341,323 @@ def test_mcp_factory_bedrock(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(provider, OpenAICompatibleProvider)
     assert provider.model_id == "openai.gpt-oss-120b-1:0"
     assert provider._base_url == "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1"
+
+
+# --- openrouter factory tests -----------------------------------------------
+
+
+def test_cli_factory_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("RCG_LLM_MODEL", raising=False)
+    monkeypatch.delenv("RCG_LLM_BASE_URL", raising=False)
+    provider = _build_provider("openrouter")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://openrouter.ai/api/v1"
+    assert provider.model_id == "anthropic/claude-sonnet-4"
+
+
+def test_cli_factory_openrouter_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "openai/gpt-4o-mini")
+    provider = _build_provider("openrouter")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.model_id == "openai/gpt-4o-mini"
+
+
+def test_cli_factory_openrouter_missing_key_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("RCG_LLM_API_KEY", raising=False)
+    with pytest.raises(typer.Exit):
+        _build_provider("openrouter")
+
+
+# --- google (Gemini API) factory tests --------------------------------------
+
+
+def _clear_google_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "RCG_LLM_API_KEY",
+                "RCG_LLM_MODEL", "RCG_LLM_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_cli_factory_google(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_google_env(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+    provider = _build_provider("google")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    assert provider.model_id == "gemini-2.5-flash"
+    assert provider._api_key == "gemini-key"
+
+
+def test_cli_factory_google_google_api_key_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_google_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+    provider = _build_provider("google")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._api_key == "google-key"
+
+
+def test_cli_factory_google_missing_key_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_google_env(monkeypatch)
+    with pytest.raises(typer.Exit):
+        _build_provider("google")
+
+
+# --- azure factory tests ----------------------------------------------------
+
+
+def _clear_azure_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "RCG_LLM_API_KEY",
+                "RCG_LLM_MODEL", "RCG_LLM_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_cli_factory_azure(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myres.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "my-deployment")
+    provider = _build_provider("azure")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://myres.openai.azure.com/openai/v1"
+    assert provider.model_id == "my-deployment"
+
+
+def test_cli_factory_azure_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myres.openai.azure.com/")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "my-deployment")
+    provider = _build_provider("azure")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://myres.openai.azure.com/openai/v1"
+
+
+def test_cli_factory_azure_base_url_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myres.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "my-deployment")
+    monkeypatch.setenv("RCG_LLM_BASE_URL", "https://custom.example/openai/v1")
+    provider = _build_provider("azure")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://custom.example/openai/v1"
+
+
+def test_cli_factory_azure_missing_endpoint_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "my-deployment")
+    with pytest.raises(typer.Exit):
+        _build_provider("azure")
+
+
+def test_cli_factory_azure_missing_model_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myres.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+    with pytest.raises(typer.Exit):
+        _build_provider("azure")
+
+
+def test_cli_factory_azure_missing_key_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myres.openai.azure.com")
+    monkeypatch.setenv("RCG_LLM_MODEL", "my-deployment")
+    with pytest.raises(typer.Exit):
+        _build_provider("azure")
+
+
+# --- vertex factory tests ---------------------------------------------------
+
+
+def _clear_vertex_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ("VERTEX_PROJECT", "GOOGLE_CLOUD_PROJECT", "RCG_LLM_REGION",
+                "VERTEX_LOCATION", "GOOGLE_VERTEX_ACCESS_TOKEN", "RCG_LLM_API_KEY",
+                "RCG_LLM_MODEL", "RCG_LLM_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_cli_factory_vertex(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("VERTEX_PROJECT", "my-proj")
+    monkeypatch.setenv("RCG_LLM_REGION", "europe-west4")
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    provider = _build_provider("vertex")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == (
+        "https://europe-west4-aiplatform.googleapis.com/v1/projects/my-proj"
+        "/locations/europe-west4/endpoints/openapi"
+    )
+    assert provider.model_id == "google/gemini-2.5-flash"
+    assert provider._api_key == "ya29.token"
+
+
+def test_cli_factory_vertex_region_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("VERTEX_PROJECT", "my-proj")
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    provider = _build_provider("vertex")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == (
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/my-proj"
+        "/locations/us-central1/endpoints/openapi"
+    )
+
+
+def test_cli_factory_vertex_project_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "fallback-proj")
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    provider = _build_provider("vertex")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert "projects/fallback-proj/" in str(provider._base_url)
+
+
+def test_cli_factory_vertex_base_url_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("VERTEX_PROJECT", "my-proj")
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    monkeypatch.setenv("RCG_LLM_BASE_URL", "https://custom.example/openapi")
+    provider = _build_provider("vertex")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://custom.example/openapi"
+
+
+def test_cli_factory_vertex_missing_project_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    with pytest.raises(typer.Exit):
+        _build_provider("vertex")
+
+
+def test_cli_factory_vertex_missing_token_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("VERTEX_PROJECT", "my-proj")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    with pytest.raises(typer.Exit):
+        _build_provider("vertex")
+
+
+def test_cli_factory_vertex_missing_model_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("VERTEX_PROJECT", "my-proj")
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    with pytest.raises(typer.Exit):
+        _build_provider("vertex")
+
+
+# --- new-provider judge tests -----------------------------------------------
+
+
+def test_cli_judge_azure_uses_openai_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_judge
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myres.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "my-deployment")
+    judge = _build_judge("azure")
+    assert isinstance(judge, OpenAICompatibleJudge)
+    assert judge._base_url == "https://myres.openai.azure.com/openai/v1"
+
+
+def test_cli_judge_azure_falls_back_to_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_judge
+
+    _clear_azure_env(monkeypatch)
+    assert isinstance(_build_judge("azure"), MockJudge)
+
+
+def test_cli_judge_vertex_uses_openai_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_judge
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("VERTEX_PROJECT", "my-proj")
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    judge = _build_judge("vertex")
+    assert isinstance(judge, OpenAICompatibleJudge)
+
+
+def test_cli_judge_vertex_falls_back_to_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_judge
+
+    _clear_vertex_env(monkeypatch)
+    assert isinstance(_build_judge("vertex"), MockJudge)
+
+
+# --- mcp_server mirror tests for the new special-case providers --------------
+
+
+def test_mcp_factory_azure(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.mcp_server import _build_provider
+
+    _clear_azure_env(monkeypatch)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://myres.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "my-deployment")
+    provider = _build_provider("azure")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://myres.openai.azure.com/openai/v1"
+    assert provider.model_id == "my-deployment"
+
+
+def test_mcp_factory_vertex(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.mcp_server import _build_provider
+
+    _clear_vertex_env(monkeypatch)
+    monkeypatch.setenv("VERTEX_PROJECT", "my-proj")
+    monkeypatch.setenv("RCG_LLM_REGION", "us-central1")
+    monkeypatch.setenv("GOOGLE_VERTEX_ACCESS_TOKEN", "ya29.token")
+    monkeypatch.setenv("RCG_LLM_MODEL", "google/gemini-2.5-flash")
+    provider = _build_provider("vertex")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == (
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/my-proj"
+        "/locations/us-central1/endpoints/openapi"
+    )

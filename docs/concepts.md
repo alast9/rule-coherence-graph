@@ -61,8 +61,9 @@ chops the file into rule-sized pieces.
 ```
 
 That's it — raw rules are still English sentences. The machine can't compare them
-yet, because "deploy to production" and "production deploy" look like different
-strings even though they mean the same thing. That's what Step 2 fixes.
+meaningfully yet: a plain string match can't tell that "deploy to production" and
+"ship the build to prod" govern the same action, nor that one rule permits what
+another forbids. That's what Step 2 fixes by giving every rule a structured form.
 
 ---
 
@@ -124,7 +125,7 @@ fields.
 You don't need the LLM, though. RCG ships an **offline `mock` extractor** that
 uses keyword heuristics (sees "MUST", "production", "deploy" → fills the fields).
 It's lossy but free and deterministic — great for demos and CI. The LLM
-(`--provider anthropic|openai|deepseek|qwen|bedrock`) gives much better accuracy
+(`--provider anthropic|openai|deepseek|qwen|bedrock|azure|vertex|google|openrouter`) gives much better accuracy
 on real, messy rules.
 
 > **Determinism + caching:** every extraction is cached by

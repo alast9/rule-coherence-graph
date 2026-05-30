@@ -98,11 +98,12 @@ anthropic`) for LLM-quality extraction, and `docker compose up -d neo4j` to also
 persist the graph.
 
 RCG also supports any OpenAI-compatible endpoint via a single provider class —
-DeepSeek, Qwen, OpenAI, Amazon Bedrock, and local servers (vLLM/Ollama):
+DeepSeek, Qwen, OpenAI, OpenRouter, the Gemini API, Amazon Bedrock, Azure AI
+Foundry, Google Vertex AI, and local servers (vLLM/Ollama):
 
 ```bash
 export DEEPSEEK_API_KEY=sk-...
-rcg check ./rules --provider deepseek            # or --provider qwen / openai / bedrock
+rcg check ./rules --provider deepseek            # or --provider qwen|openai|bedrock|azure|vertex|google|openrouter
 
 # A local OpenAI-compatible server
 export RCG_LLM_BASE_URL=http://localhost:11434/v1

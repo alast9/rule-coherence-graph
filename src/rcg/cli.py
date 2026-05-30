@@ -41,8 +41,10 @@ PROVIDER_OPT = Annotated[
             "Extraction provider: 'auto' (anthropic if ANTHROPIC_API_KEY is set, "
             "else the offline mock), 'anthropic' (real API), 'deepseek', 'qwen', "
             "'openai' (any OpenAI-compatible endpoint via RCG_LLM_BASE_URL), "
-            "'bedrock' (Amazon Bedrock's OpenAI-compatible endpoint), or "
-            "'mock' (offline demo)."
+            "'openrouter' (aggregator), 'google' (Gemini API / AI Studio), "
+            "'bedrock' (Amazon Bedrock), 'azure' (Azure AI Foundry / Azure OpenAI; "
+            "model = deployment name), 'vertex' (Google Vertex AI; OAuth access "
+            "token), or 'mock' (offline demo)."
         ),
     ),
 ]
@@ -66,11 +68,34 @@ _OPENAI_PRESETS: dict[str, dict[str, str | None]] = {
         "model": "gpt-4o-mini",
         "key_env": "OPENAI_API_KEY",
     },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        # Overridable via RCG_LLM_MODEL; OpenRouter uses vendor/model ids
+        # (e.g. anthropic/claude-sonnet-4, openai/gpt-4o-mini).
+        "model": "anthropic/claude-sonnet-4",
+        "key_env": "OPENROUTER_API_KEY",
+    },
+    "google": {
+        # Google Gemini API (AI Studio), OpenAI-compatible surface.
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "model": "gemini-2.5-flash",
+        "key_env": "GEMINI_API_KEY",
+    },
 }
 
 
 def _resolve_openai_key(preset_key_env: str) -> str | None:
-    """Resolve an OpenAI-compatible key: preset env, then generic RCG_LLM_API_KEY."""
+    """Resolve an OpenAI-compatible key: preset env, then generic RCG_LLM_API_KEY.
+
+    The ``google`` preset (key env ``GEMINI_API_KEY``) additionally falls back to
+    ``GOOGLE_API_KEY`` before the generic ``RCG_LLM_API_KEY``.
+    """
+    if preset_key_env == "GEMINI_API_KEY":
+        return (
+            os.environ.get("GEMINI_API_KEY")
+            or os.environ.get("GOOGLE_API_KEY")
+            or os.environ.get("RCG_LLM_API_KEY")
+        )
     return os.environ.get(preset_key_env) or os.environ.get("RCG_LLM_API_KEY")
 
 
@@ -108,6 +133,67 @@ def _resolve_bedrock_key() -> str | None:
     """Resolve the Bedrock bearer key: AWS_BEARER_TOKEN_BEDROCK, then RCG_LLM_API_KEY."""
     return os.environ.get(_BEDROCK_KEY_ENV) or os.environ.get("RCG_LLM_API_KEY")
 
+
+# Azure AI Foundry / Azure OpenAI is special-cased (computed base_url, like
+# bedrock): the endpoint is per-resource and the "model" is the *deployment name*.
+# The modern v1 GA path lets the plain OpenAI client work via
+# ``<endpoint>/openai/v1`` (no api-version query param required).
+_AZURE_ENDPOINT_ENV = "AZURE_OPENAI_ENDPOINT"
+_AZURE_KEY_ENV = "AZURE_OPENAI_API_KEY"
+
+
+def _azure_base_url() -> str | None:
+    """Compute the Azure OpenAI v1 base URL, or None if the endpoint is unset.
+
+    ``RCG_LLM_BASE_URL`` wins; otherwise ``<AZURE_OPENAI_ENDPOINT>/openai/v1``
+    (trailing slash on the endpoint is stripped before appending).
+    """
+    override = os.environ.get("RCG_LLM_BASE_URL")
+    if override:
+        return override
+    endpoint = os.environ.get(_AZURE_ENDPOINT_ENV)
+    if not endpoint:
+        return None
+    return f"{endpoint.rstrip('/')}/openai/v1"
+
+
+# Google Vertex AI is special-cased: OpenAI-compatible endpoint whose URL is
+# computed from region+project, and whose auth is a *short-lived* Google OAuth
+# access token (gcloud auth print-access-token), not a static API key — so it
+# must be supplied at runtime via env.
+_VERTEX_TOKEN_ENV = "GOOGLE_VERTEX_ACCESS_TOKEN"
+
+
+def _vertex_region() -> str:
+    """Resolve the Vertex region: RCG_LLM_REGION, then VERTEX_LOCATION, default us-central1."""
+    return (
+        os.environ.get("RCG_LLM_REGION")
+        or os.environ.get("VERTEX_LOCATION")
+        or "us-central1"
+    )
+
+
+def _vertex_base_url(project: str) -> str:
+    """Compute the Vertex OpenAI-compatible base URL (RCG_LLM_BASE_URL wins)."""
+    override = os.environ.get("RCG_LLM_BASE_URL")
+    if override:
+        return override
+    region = _vertex_region()
+    return (
+        f"https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+        f"/locations/{region}/endpoints/openapi"
+    )
+
+
+def _vertex_project() -> str | None:
+    """Resolve the Vertex project: VERTEX_PROJECT, then GOOGLE_CLOUD_PROJECT."""
+    return os.environ.get("VERTEX_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+
+
+def _resolve_vertex_token() -> str | None:
+    """Resolve the Vertex access token: GOOGLE_VERTEX_ACCESS_TOKEN, then RCG_LLM_API_KEY."""
+    return os.environ.get(_VERTEX_TOKEN_ENV) or os.environ.get("RCG_LLM_API_KEY")
+
 NEO4J_URI = Annotated[
     str, typer.Option(envvar="RCG_NEO4J_URI", help="Bolt URI. Ignored with --no-graph.")
 ]
@@ -138,6 +224,10 @@ def _build_provider(name: str) -> LLMProvider:
         return AnthropicProvider()
     if name == "bedrock":
         return _build_bedrock_provider()
+    if name == "azure":
+        return _build_azure_provider()
+    if name == "vertex":
+        return _build_vertex_provider()
     if name in _OPENAI_PRESETS:
         return _build_openai_provider(name)
     typer.echo(f"error: unknown provider {name!r}", err=True)
@@ -163,6 +253,82 @@ def _build_bedrock_provider() -> LLMProvider:
     model = os.environ.get("RCG_LLM_MODEL") or _BEDROCK_DEFAULT_MODEL
     return OpenAICompatibleProvider(
         model_id=model, base_url=_bedrock_base_url(), api_key=api_key
+    )
+
+
+def _build_azure_provider() -> LLMProvider:
+    """Build an OpenAI-compatible provider pointed at Azure AI Foundry / Azure OpenAI.
+
+    Per-resource endpoint → ``<endpoint>/openai/v1`` base URL, an Azure OpenAI API
+    key, and the *deployment name* (from RCG_LLM_MODEL) as the model. Special-cased
+    because both the URL and the required deployment name come from the environment.
+    """
+    from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+    base_url = _azure_base_url()
+    if not base_url:
+        typer.echo(
+            f"error: {_AZURE_ENDPOINT_ENV} is not set (e.g. "
+            "https://myres.openai.azure.com). Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    api_key = os.environ.get(_AZURE_KEY_ENV) or os.environ.get("RCG_LLM_API_KEY")
+    if not api_key:
+        typer.echo(
+            f"error: {_AZURE_KEY_ENV} is not set (also tried RCG_LLM_API_KEY). "
+            "Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    model = os.environ.get("RCG_LLM_MODEL")
+    if not model:
+        typer.echo(
+            "error: azure requires RCG_LLM_MODEL set to your Azure deployment name "
+            "(there is no default). Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return OpenAICompatibleProvider(model_id=model, base_url=base_url, api_key=api_key)
+
+
+def _build_vertex_provider() -> LLMProvider:
+    """Build an OpenAI-compatible provider pointed at Google Vertex AI.
+
+    Region+project-derived base URL, a short-lived Google OAuth access token as the
+    bearer, and a required model id (RCG_LLM_MODEL, e.g. google/gemini-2.5-flash).
+    Special-cased because the URL and a runtime-only token come from the environment.
+    """
+    from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+    project = _vertex_project()
+    if not project:
+        typer.echo(
+            "error: VERTEX_PROJECT is not set (also tried GOOGLE_CLOUD_PROJECT). "
+            "Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    token = _resolve_vertex_token()
+    if not token:
+        typer.echo(
+            f"error: {_VERTEX_TOKEN_ENV} is not set (also tried RCG_LLM_API_KEY). "
+            "It is a short-lived token from `gcloud auth print-access-token`. "
+            "Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    model = os.environ.get("RCG_LLM_MODEL")
+    if not model:
+        typer.echo(
+            "error: vertex requires RCG_LLM_MODEL set to a model id "
+            "(e.g. google/gemini-2.5-flash); there is no default. "
+            "Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return OpenAICompatibleProvider(
+        model_id=model, base_url=_vertex_base_url(project), api_key=token
     )
 
 
@@ -194,6 +360,24 @@ def _build_judge(provider_name: str) -> SemanticJudge:
             model = os.environ.get("RCG_LLM_MODEL") or _BEDROCK_DEFAULT_MODEL
             return OpenAICompatibleJudge(
                 model_id=model, base_url=_bedrock_base_url(), api_key=api_key
+            )
+        return MockJudge()
+    if provider_name == "azure":
+        az_base_url = _azure_base_url()
+        az_key = os.environ.get(_AZURE_KEY_ENV) or os.environ.get("RCG_LLM_API_KEY")
+        az_model = os.environ.get("RCG_LLM_MODEL")
+        if az_base_url and az_key and az_model:
+            return OpenAICompatibleJudge(
+                model_id=az_model, base_url=az_base_url, api_key=az_key
+            )
+        return MockJudge()
+    if provider_name == "vertex":
+        vx_project = _vertex_project()
+        vx_token = _resolve_vertex_token()
+        vx_model = os.environ.get("RCG_LLM_MODEL")
+        if vx_project and vx_token and vx_model:
+            return OpenAICompatibleJudge(
+                model_id=vx_model, base_url=_vertex_base_url(vx_project), api_key=vx_token
             )
         return MockJudge()
     if provider_name in _OPENAI_PRESETS:
@@ -230,6 +414,60 @@ def _build_benchmark_judge(kind: str) -> SemanticJudge:
         model = os.environ.get("RCG_LLM_MODEL") or _BEDROCK_DEFAULT_MODEL
         return OpenAICompatibleJudge(
             model_id=model, base_url=_bedrock_base_url(), api_key=api_key
+        )
+    if kind == "azure":
+        az_base_url = _azure_base_url()
+        if not az_base_url:
+            typer.echo(
+                f"error: {_AZURE_ENDPOINT_ENV} is not set. Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        az_key = os.environ.get(_AZURE_KEY_ENV) or os.environ.get("RCG_LLM_API_KEY")
+        if not az_key:
+            typer.echo(
+                f"error: {_AZURE_KEY_ENV} is not set (also tried RCG_LLM_API_KEY). "
+                "Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        az_model = os.environ.get("RCG_LLM_MODEL")
+        if not az_model:
+            typer.echo(
+                "error: azure requires RCG_LLM_MODEL set to your Azure deployment name. "
+                "Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        return OpenAICompatibleJudge(model_id=az_model, base_url=az_base_url, api_key=az_key)
+    if kind == "vertex":
+        vx_project = _vertex_project()
+        if not vx_project:
+            typer.echo(
+                "error: VERTEX_PROJECT is not set (also tried GOOGLE_CLOUD_PROJECT). "
+                "Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        vx_token = _resolve_vertex_token()
+        if not vx_token:
+            typer.echo(
+                f"error: {_VERTEX_TOKEN_ENV} is not set (also tried RCG_LLM_API_KEY). "
+                "It is a short-lived token from `gcloud auth print-access-token`. "
+                "Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        vx_model = os.environ.get("RCG_LLM_MODEL")
+        if not vx_model:
+            typer.echo(
+                "error: vertex requires RCG_LLM_MODEL set to a model id "
+                "(e.g. google/gemini-2.5-flash). Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        return OpenAICompatibleJudge(
+            model_id=vx_model, base_url=_vertex_base_url(vx_project), api_key=vx_token
         )
     if kind in _OPENAI_PRESETS:
         preset = _OPENAI_PRESETS[kind]
@@ -490,7 +728,9 @@ def benchmark(
     ),
     embedder: str = typer.Option("hashing", "--embedder", help="hashing|sentence-transformers"),
     judge: str = typer.Option(
-        "mock", "--judge", help="mock|anthropic|deepseek|qwen|openai|bedrock"
+        "mock",
+        "--judge",
+        help="mock|anthropic|deepseek|qwen|openai|openrouter|google|bedrock|azure|vertex",
     ),
     semantic: bool = typer.Option(
         True, "--semantic/--no-semantic", help="Run the semantic pass in the benchmark."
