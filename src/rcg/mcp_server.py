@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from rcg import metrics
 from rcg.detectors.base import Finding
@@ -375,6 +376,50 @@ def _resolve_transport(env: Mapping[str, str]) -> tuple[str, str, int]:
     return transport, host, port
 
 
+def _resolve_transport_security(
+    env: Mapping[str, str],
+) -> TransportSecuritySettings | None:
+    """Build transport-security settings from the environment (pure, testable).
+
+    FastMCP's streamable-http transport enables DNS-rebinding protection by
+    default, allowing only ``localhost``/``127.0.0.1`` Host headers — so a public
+    hostname (e.g. ``rcg-mcp-demo.fly.dev``) is rejected with 421. Returns:
+
+    * ``None`` when neither knob is set (keep FastMCP's secure localhost default,
+      so local/stdio use is unchanged);
+    * a settings object that **disables** rebinding protection when
+      ``RCG_MCP_DISABLE_DNS_REBINDING_PROTECTION`` is truthy (escape hatch);
+    * otherwise a settings object that keeps protection on but **adds** the hosts
+      from ``RCG_MCP_ALLOWED_HOSTS`` (comma-separated host or ``host:port``) to
+      the allow-list, deriving matching ``https://``/``http://`` origins.
+    """
+    disable = env.get(
+        "RCG_MCP_DISABLE_DNS_REBINDING_PROTECTION", ""
+    ).strip().lower() in {"1", "true", "yes"}
+    if disable:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+    hosts_raw = env.get("RCG_MCP_ALLOWED_HOSTS", "").strip()
+    if not hosts_raw:
+        return None
+
+    allowed_hosts: list[str] = []
+    allowed_origins: list[str] = []
+    for entry in (h.strip() for h in hosts_raw.split(",")):
+        if not entry:
+            continue
+        allowed_hosts.append(entry)
+        if ":" not in entry:
+            allowed_hosts.append(f"{entry}:*")
+        allowed_origins.append(f"https://{entry}")
+        allowed_origins.append(f"http://{entry}")
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+    )
+
+
 def main() -> None:
     transport, host, port = _resolve_transport(os.environ)
     if transport == "stdio":
@@ -398,6 +443,11 @@ def main() -> None:
     # HTTP transports need a bound host/port; FastMCP reads these from settings.
     mcp.settings.host = host
     mcp.settings.port = port
+    # Extend the DNS-rebinding allow-list so a public hostname (the Fly demo)
+    # isn't rejected with 421; None keeps FastMCP's secure localhost default.
+    security = _resolve_transport_security(os.environ)
+    if security is not None:
+        mcp.settings.transport_security = security
     if transport == "sse":
         mcp.run(transport="sse")
     else:

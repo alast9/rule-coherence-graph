@@ -32,6 +32,29 @@ def test_resolve_transport_defaults_to_stdio() -> None:
     assert port == 8080
 
 
+def test_transport_security_none_by_default() -> None:
+    assert mcp_server._resolve_transport_security({}) is None
+
+
+def test_transport_security_allows_configured_host() -> None:
+    sec = mcp_server._resolve_transport_security(
+        {"RCG_MCP_ALLOWED_HOSTS": "rcg-mcp-demo.fly.dev"}
+    )
+    assert sec is not None
+    assert sec.enable_dns_rebinding_protection is True
+    assert "rcg-mcp-demo.fly.dev" in sec.allowed_hosts
+    assert "rcg-mcp-demo.fly.dev:*" in sec.allowed_hosts
+    assert "https://rcg-mcp-demo.fly.dev" in sec.allowed_origins
+
+
+def test_transport_security_disable_flag() -> None:
+    sec = mcp_server._resolve_transport_security(
+        {"RCG_MCP_DISABLE_DNS_REBINDING_PROTECTION": "1"}
+    )
+    assert sec is not None
+    assert sec.enable_dns_rebinding_protection is False
+
+
 def test_resolve_transport_http_binds_all_interfaces() -> None:
     result = mcp_server._resolve_transport({"RCG_MCP_TRANSPORT": "http", "PORT": "1234"})
     assert result == ("streamable-http", "0.0.0.0", 1234)
