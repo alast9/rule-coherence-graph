@@ -228,3 +228,116 @@ def test_mcp_factory_deepseek(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = _build_provider("deepseek")
     assert isinstance(provider, OpenAICompatibleProvider)
     assert provider.model_id == "deepseek-chat"
+
+
+# --- bedrock factory tests --------------------------------------------------
+
+
+def _clear_bedrock_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "RCG_LLM_API_KEY",
+        "RCG_LLM_REGION",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        "RCG_LLM_BASE_URL",
+        "RCG_LLM_MODEL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_cli_factory_bedrock_region(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_bedrock_env(monkeypatch)
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+    monkeypatch.setenv("RCG_LLM_REGION", "us-west-2")
+    provider = _build_provider("bedrock")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.model_id == "openai.gpt-oss-120b-1:0"
+    assert provider._base_url == "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1"
+
+
+def test_cli_factory_bedrock_region_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_bedrock_env(monkeypatch)
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+    provider = _build_provider("bedrock")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1"
+
+
+def test_cli_factory_bedrock_base_url_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_bedrock_env(monkeypatch)
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+    monkeypatch.setenv("RCG_LLM_REGION", "us-west-2")
+    monkeypatch.setenv("RCG_LLM_BASE_URL", "https://bedrock-mantle.us-west-2.api.aws/v1")
+    provider = _build_provider("bedrock")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._base_url == "https://bedrock-mantle.us-west-2.api.aws/v1"
+
+
+def test_cli_factory_bedrock_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_bedrock_env(monkeypatch)
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+    monkeypatch.setenv("RCG_LLM_MODEL", "openai.gpt-oss-20b-1:0")
+    provider = _build_provider("bedrock")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.model_id == "openai.gpt-oss-20b-1:0"
+
+
+def test_cli_factory_bedrock_generic_key_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_bedrock_env(monkeypatch)
+    monkeypatch.setenv("RCG_LLM_API_KEY", "generic-key")
+    provider = _build_provider("bedrock")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider._api_key == "generic-key"
+
+
+def test_cli_factory_bedrock_missing_key_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.cli import _build_provider
+
+    _clear_bedrock_env(monkeypatch)
+    with pytest.raises(typer.Exit):
+        _build_provider("bedrock")
+
+
+def test_cli_judge_bedrock_uses_openai_when_key_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rcg.cli import _build_judge
+
+    _clear_bedrock_env(monkeypatch)
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+    monkeypatch.setenv("RCG_LLM_REGION", "us-west-2")
+    judge = _build_judge("bedrock")
+    assert isinstance(judge, OpenAICompatibleJudge)
+    assert judge._base_url == "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1"
+
+
+def test_cli_judge_bedrock_falls_back_to_mock_without_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rcg.cli import _build_judge
+
+    _clear_bedrock_env(monkeypatch)
+    assert isinstance(_build_judge("bedrock"), MockJudge)
+
+
+def test_mcp_factory_bedrock(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rcg.mcp_server import _build_provider
+
+    _clear_bedrock_env(monkeypatch)
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+    monkeypatch.setenv("RCG_LLM_REGION", "us-west-2")
+    provider = _build_provider("bedrock")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.model_id == "openai.gpt-oss-120b-1:0"
+    assert provider._base_url == "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1"

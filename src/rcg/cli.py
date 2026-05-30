@@ -40,7 +40,8 @@ PROVIDER_OPT = Annotated[
         help=(
             "Extraction provider: 'auto' (anthropic if ANTHROPIC_API_KEY is set, "
             "else the offline mock), 'anthropic' (real API), 'deepseek', 'qwen', "
-            "'openai' (any OpenAI-compatible endpoint via RCG_LLM_BASE_URL), or "
+            "'openai' (any OpenAI-compatible endpoint via RCG_LLM_BASE_URL), "
+            "'bedrock' (Amazon Bedrock's OpenAI-compatible endpoint), or "
             "'mock' (offline demo)."
         ),
     ),
@@ -72,6 +73,41 @@ def _resolve_openai_key(preset_key_env: str) -> str | None:
     """Resolve an OpenAI-compatible key: preset env, then generic RCG_LLM_API_KEY."""
     return os.environ.get(preset_key_env) or os.environ.get("RCG_LLM_API_KEY")
 
+
+# Bedrock is special-cased rather than added to _OPENAI_PRESETS because its
+# base_url is *computed from a region* (the static preset shape only carries a
+# fixed base_url). It is still just another OpenAI-compatible endpoint: the
+# OpenAI-SDK path uses an Amazon Bedrock API key as the bearer token (not SigV4).
+_BEDROCK_DEFAULT_MODEL = "openai.gpt-oss-120b-1:0"
+_BEDROCK_KEY_ENV = "AWS_BEARER_TOKEN_BEDROCK"
+
+
+def _bedrock_region() -> str:
+    """Resolve the Bedrock region: RCG_LLM_REGION, then the standard AWS vars."""
+    return (
+        os.environ.get("RCG_LLM_REGION")
+        or os.environ.get("AWS_REGION")
+        or os.environ.get("AWS_DEFAULT_REGION")
+        or "us-east-1"
+    )
+
+
+def _bedrock_base_url() -> str:
+    """Compute the Bedrock OpenAI-compatible base URL (RCG_LLM_BASE_URL wins).
+
+    RCG_LLM_BASE_URL lets users point at the newer Mantle endpoint
+    (https://bedrock-mantle.<region>.api.aws/v1) or a different region/host.
+    """
+    override = os.environ.get("RCG_LLM_BASE_URL")
+    if override:
+        return override
+    return f"https://bedrock-runtime.{_bedrock_region()}.amazonaws.com/openai/v1"
+
+
+def _resolve_bedrock_key() -> str | None:
+    """Resolve the Bedrock bearer key: AWS_BEARER_TOKEN_BEDROCK, then RCG_LLM_API_KEY."""
+    return os.environ.get(_BEDROCK_KEY_ENV) or os.environ.get("RCG_LLM_API_KEY")
+
 NEO4J_URI = Annotated[
     str, typer.Option(envvar="RCG_NEO4J_URI", help="Bolt URI. Ignored with --no-graph.")
 ]
@@ -100,10 +136,34 @@ def _build_provider(name: str) -> LLMProvider:
             )
             raise typer.Exit(code=2)
         return AnthropicProvider()
+    if name == "bedrock":
+        return _build_bedrock_provider()
     if name in _OPENAI_PRESETS:
         return _build_openai_provider(name)
     typer.echo(f"error: unknown provider {name!r}", err=True)
     raise typer.Exit(code=2)
+
+
+def _build_bedrock_provider() -> LLMProvider:
+    """Build an OpenAI-compatible provider pointed at Amazon Bedrock.
+
+    Region-derived base_url (or RCG_LLM_BASE_URL override) + a Bedrock API key
+    as the bearer token. Special-cased because the URL depends on a region.
+    """
+    from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+    api_key = _resolve_bedrock_key()
+    if not api_key:
+        typer.echo(
+            f"error: {_BEDROCK_KEY_ENV} is not set (also tried RCG_LLM_API_KEY). "
+            "Use --provider mock for an offline demo.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    model = os.environ.get("RCG_LLM_MODEL") or _BEDROCK_DEFAULT_MODEL
+    return OpenAICompatibleProvider(
+        model_id=model, base_url=_bedrock_base_url(), api_key=api_key
+    )
 
 
 def _build_openai_provider(name: str) -> LLMProvider:
@@ -128,6 +188,14 @@ def _build_openai_provider(name: str) -> LLMProvider:
 def _build_judge(provider_name: str) -> SemanticJudge:
     if provider_name in {"anthropic", "auto"} and os.environ.get("ANTHROPIC_API_KEY"):
         return AnthropicJudge()
+    if provider_name == "bedrock":
+        api_key = _resolve_bedrock_key()
+        if api_key:
+            model = os.environ.get("RCG_LLM_MODEL") or _BEDROCK_DEFAULT_MODEL
+            return OpenAICompatibleJudge(
+                model_id=model, base_url=_bedrock_base_url(), api_key=api_key
+            )
+        return MockJudge()
     if provider_name in _OPENAI_PRESETS:
         preset = _OPENAI_PRESETS[provider_name]
         api_key = _resolve_openai_key(str(preset["key_env"]))
@@ -150,6 +218,19 @@ def _build_benchmark_judge(kind: str) -> SemanticJudge:
             )
             raise typer.Exit(code=2)
         return AnthropicJudge()
+    if kind == "bedrock":
+        api_key = _resolve_bedrock_key()
+        if not api_key:
+            typer.echo(
+                f"error: {_BEDROCK_KEY_ENV} is not set (also tried RCG_LLM_API_KEY). "
+                "Use --judge mock for offline runs.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        model = os.environ.get("RCG_LLM_MODEL") or _BEDROCK_DEFAULT_MODEL
+        return OpenAICompatibleJudge(
+            model_id=model, base_url=_bedrock_base_url(), api_key=api_key
+        )
     if kind in _OPENAI_PRESETS:
         preset = _OPENAI_PRESETS[kind]
         key_env = str(preset["key_env"])
@@ -409,7 +490,7 @@ def benchmark(
     ),
     embedder: str = typer.Option("hashing", "--embedder", help="hashing|sentence-transformers"),
     judge: str = typer.Option(
-        "mock", "--judge", help="mock|anthropic|deepseek|qwen|openai"
+        "mock", "--judge", help="mock|anthropic|deepseek|qwen|openai|bedrock"
     ),
     semantic: bool = typer.Option(
         True, "--semantic/--no-semantic", help="Run the semantic pass in the benchmark."

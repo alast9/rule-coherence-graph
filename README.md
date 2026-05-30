@@ -21,14 +21,27 @@ detects conflicts you can query, visualize, and fail CI on.
 
 ## 30-second demo
 
+Zero install — run the published package straight from PyPI and point it at your
+own rules (no clone needed):
+
 ```bash
-git clone <this-repo> && cd rcg
-uv sync
-uv run rcg check examples/gemini_incident
+uvx --from rule-coherence-graph rcg check ./path/to/your/agent/rules
+# or: pipx install rule-coherence-graph && rcg check ./path/to/your/agent/rules
+```
+
+Want to try the bundled Gemini incident corpus? That example lives in the repo,
+so clone it first:
+
+```bash
+gh repo clone alast9/rule-coherence-graph && cd rule-coherence-graph
+# (or: git clone https://github.com/alast9/rule-coherence-graph && cd rule-coherence-graph)
+uvx --from rule-coherence-graph rcg check examples/gemini_incident
+# or, in a checkout: uv sync && uv run rcg check examples/gemini_incident
 ```
 
 With no `ANTHROPIC_API_KEY` set, `check` falls back to the offline heuristic
-extractor (with a warning) so the demo runs anywhere. It reports a **coherence score of 0.32** — 10 findings (7 syntactic
+extractor (with a warning) so the demo runs anywhere. On the bundled example it
+reports a **coherence score of 0.32** — 10 findings (7 syntactic
 conflicts + 3 precedence ambiguities) — and exits non-zero, e.g.:
 
 ```
@@ -66,14 +79,17 @@ rcg check ./path/to/your/agent/rules     # point it at your own .cursorrules / C
 ```
 
 Optional extras: `[mcp]` (MCP server), `[embeddings]` (sentence-transformers),
-`[openai]` (DeepSeek / Qwen / OpenAI providers), e.g.
+`[openai]` (DeepSeek / Qwen / OpenAI / Bedrock providers), e.g.
 `pip install 'rule-coherence-graph[openai]'`.
 
 Or run it once without installing:
 
 ```bash
-uvx --from rule-coherence-graph rcg check examples/gemini_incident
+uvx --from rule-coherence-graph rcg check ./path/to/your/agent/rules
 ```
+
+(The bundled `examples/gemini_incident` corpus ships with the repo, so a `check`
+against it needs a clone — see the [30-second demo](#30-second-demo) above.)
 
 `rcg` falls back to the offline heuristic extractor when `ANTHROPIC_API_KEY` is
 unset, so you get a result with zero setup. Set the key (and `--provider
@@ -81,11 +97,11 @@ anthropic`) for LLM-quality extraction, and `docker compose up -d neo4j` to also
 persist the graph.
 
 RCG also supports any OpenAI-compatible endpoint via a single provider class —
-DeepSeek, Qwen, OpenAI, and local servers (vLLM/Ollama):
+DeepSeek, Qwen, OpenAI, Amazon Bedrock, and local servers (vLLM/Ollama):
 
 ```bash
 export DEEPSEEK_API_KEY=sk-...
-rcg check ./rules --provider deepseek            # or --provider qwen / openai
+rcg check ./rules --provider deepseek            # or --provider qwen / openai / bedrock
 
 # A local OpenAI-compatible server
 export RCG_LLM_BASE_URL=http://localhost:11434/v1
@@ -139,7 +155,7 @@ conflict was invisible until it caused damage.
   policy-as-code: OPA Rego (`.rego`) and AWS Cedar (`.cedar`).
 - **Extractor** turns each raw rule into a canonical `Rule` via a provider
   (`anthropic`, `mock`, `auto`, or any OpenAI-compatible endpoint —
-  `deepseek` / `qwen` / `openai`). Adding a provider is a single new class
+  `deepseek` / `qwen` / `openai` / `bedrock`). Adding a provider is a single new class
   implementing the `LLMProvider` protocol; `src/rcg/extractors/openai_provider.py`
   is one endpoint-configurable class that drives DeepSeek, Qwen, OpenAI, and local
   vLLM/Ollama (see [docs/providers.md](docs/providers.md)). Results are cached by

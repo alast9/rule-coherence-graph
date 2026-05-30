@@ -85,12 +85,42 @@ _OPENAI_PRESETS: dict[str, dict[str, str | None]] = {
 }
 
 
+# Bedrock is special-cased (kept out of _OPENAI_PRESETS) because its base_url is
+# computed from a region, unlike the static presets. Mirrors rcg.cli; the
+# OpenAI-SDK Bedrock path uses an Amazon Bedrock API key as the bearer token.
+_BEDROCK_DEFAULT_MODEL = "openai.gpt-oss-120b-1:0"
+
+
+def _bedrock_base_url() -> str:
+    """Compute the Bedrock OpenAI-compatible base URL (RCG_LLM_BASE_URL wins)."""
+    override = os.environ.get("RCG_LLM_BASE_URL")
+    if override:
+        return override
+    region = (
+        os.environ.get("RCG_LLM_REGION")
+        or os.environ.get("AWS_REGION")
+        or os.environ.get("AWS_DEFAULT_REGION")
+        or "us-east-1"
+    )
+    return f"https://bedrock-runtime.{region}.amazonaws.com/openai/v1"
+
+
 def _build_provider(name: str) -> LLMProvider:
     key = name.lower()
     if key == "anthropic":
         from rcg.extractors.anthropic_provider import AnthropicProvider
 
         return AnthropicProvider()
+    if key == "bedrock":
+        from rcg.extractors.openai_provider import OpenAICompatibleProvider
+
+        api_key = os.environ.get("AWS_BEARER_TOKEN_BEDROCK") or os.environ.get(
+            "RCG_LLM_API_KEY"
+        )
+        model = os.environ.get("RCG_LLM_MODEL") or _BEDROCK_DEFAULT_MODEL
+        return OpenAICompatibleProvider(
+            model_id=model, base_url=_bedrock_base_url(), api_key=api_key
+        )
     if key in _OPENAI_PRESETS:
         from rcg.extractors.openai_provider import OpenAICompatibleProvider
 
