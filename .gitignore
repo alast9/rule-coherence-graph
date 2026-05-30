@@ -12,3 +12,4 @@ site/
 .DS_Store
 .env
 uv.lock
+.claude/
