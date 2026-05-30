@@ -9,6 +9,10 @@ primary_region = "iad"
 [env]
   RCG_MCP_TRANSPORT = "streamable-http"
   PORT = "8080"
+  # FastMCP's streamable-http transport blocks non-localhost Host headers (DNS
+  # rebinding protection), so a public hostname returns HTTP 421 without this.
+  # Update it if you rename the app. See docs/hosted-mcp.md.
+  RCG_MCP_ALLOWED_HOSTS = "rcg-mcp-demo.fly.dev"
   # Opt in to the public-demo guardrails (rate limit, input/rule caps, graph
   # node cap + auto-clear). All RCG_* limits below default to safe values, so
   # local/stdio/self-hosted use (without this flag) stays unrestricted.
