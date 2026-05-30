@@ -97,10 +97,14 @@ Rule B:
   context_conditions: ["requires_human_approval"]
 ```
 
-Notice what extraction did: it recognized that **both rules are about the same
-thing** (`action_class = deploy.production`) even though one said "deploy to
-production" and the other "production deploy". Now they line up and can be
-compared. This normalization is the whole point.
+Notice what extraction did: it collapsed both sentences to the same
+`action_class` (`deploy.production`), so the two rules now **line up and can be
+compared field-by-field**. This normalization is the whole point — and it's what
+makes RCG robust to *wording*. These two rules happen to share the phrase "deploy
+to production", but extraction would map differently-worded rules to the same
+class too: "ship the build to prod" or "release to the live environment" would
+*also* become `deploy.production`. The detector compares the structured
+`action_class`, not the surface words, so paraphrases still line up.
 
 ### Why an LLM here?
 
