@@ -262,26 +262,33 @@ All findings feed a single **coherence score** in `[0, 1]` (1.0 = perfectly
 coherent). The formula is deliberately simple and explainable:
 
 ```
-penalty = Σ over findings of  (type_weight × severity_multiplier)
+penalty = Σ over findings of  type_weight
 score   = max(0, 1 − penalty / number_of_rules)
 ```
 
-Weights (more certain finding types cost more):
+Each finding contributes a **type weight** to the penalty (more certain finding
+types cost more):
 
-| type | weight | | severity | multiplier |
-| --- | --- | --- | --- | --- |
-| syntactic | 1.0 | | critical | 1.0 |
-| semantic | 0.7 | | high | 0.8 |
-| precedence | 0.4 | | medium | 0.5 |
-| | | | low | 0.3 |
+| type | weight |
+| --- | --- |
+| syntactic | 1.0 |
+| semantic | 0.7 |
+| precedence | 0.4 |
 
-**Worked example.** Our corpus has 2 rules and 1 finding (a *syntactic*,
-*high*-severity conflict):
+> **Note:** every finding also carries a `severity` (low/medium/high/critical)
+> that is shown in the report so a human can triage — but severity does **not**
+> change the score. Only the finding's *type* affects the number. (Folding
+> severity into the score is a possible future refinement.)
+
+**Worked example.** Our corpus has 2 rules and 1 finding (a *syntactic*
+conflict, reported at *high* severity):
 
 ```
-penalty = 1.0 (syntactic) × 0.8 (high) = 0.8
-score   = max(0, 1 − 0.8 / 2) = 1 − 0.4 = 0.60
+penalty = 1.0 (syntactic type weight)
+score   = max(0, 1 − 1.0 / 2) = 1 − 0.5 = 0.50
 ```
+
+This matches what the live server returns for this exact corpus: `score: 0.5`.
 
 Dividing by the rule count means a large corpus isn't punished just for being
 large — one bad pair in 2 rules hurts more than one bad pair in 200. You gate CI
